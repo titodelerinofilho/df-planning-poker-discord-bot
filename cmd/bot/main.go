@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+
+	"github.com/titodelerinofilho/df-planning-poker-discord-bot/internal/platform/config"
 )
 
 const startupMessage = "df planning poker bot started"
@@ -25,7 +27,13 @@ func run(ctx context.Context, stdout io.Writer) error {
 		return fmt.Errorf("start bot: %w", err)
 	}
 
-	_, err = fmt.Fprintln(stdout, startupMessage)
+	cfg, err := config.LoadFromEnv()
+
+	if err != nil {
+		return fmt.Errorf("load configuration: %w", err)
+	}
+
+	_, err = fmt.Fprintf(stdout, "%s env=%s command_registration_mode=%s\n", startupMessage, cfg.AppEnv, cfg.CommandRegistrationMode)
 
 	if err != nil {
 		return fmt.Errorf("write startup message: %w", err)

@@ -1,0 +1,6 @@
+.env
+.env.*
+!.env.example
+
+/bot
+/df-planning-poker-bot
