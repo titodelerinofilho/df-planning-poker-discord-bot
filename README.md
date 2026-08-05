@@ -13,7 +13,7 @@ Copie `.env.example` para um arquivo local não versionado e preencha os valores
 Variáveis obrigatórias:
 
 - `APP_ENV`: ambiente da aplicação, como `development`.
-- `LOG_LEVEL`: nível de log planejado para o startup, como `debug` ou `info`.
+- `LOG_LEVEL`: nível de log estruturado, aceitando `debug`, `info`, `warn` ou `error`.
 - `DISCORD_TOKEN`: token do bot do Discord. Nunca commite o valor real.
 - `DISCORD_APPLICATION_ID`: ID da aplicação Discord.
 - `DISCORD_GUILD_ID`: ID da guild de desenvolvimento. Obrigatório quando `COMMAND_REGISTRATION_MODE=guild`.
@@ -23,3 +23,12 @@ Variáveis obrigatórias:
 - `SHUTDOWN_TIMEOUT`: duração máxima de encerramento, como `10s`.
 
 O startup falha com uma mensagem clara quando uma variável obrigatória está ausente ou inválida, sem imprimir secrets.
+
+Os logs são emitidos em JSON via `slog` e incluem os campos fixos `version`, `environment`, `channel` e `correlation_identifier`.
+
+Os canais seguem esta separação:
+
+- `exceptions`: STDERR, nível `CRITICAL`.
+- `requests`: STDOUT, nível `INFO`.
+- `responses`: STDOUT, nível `INFO`.
+- `database_queries`: STDOUT, nível `INFO`.

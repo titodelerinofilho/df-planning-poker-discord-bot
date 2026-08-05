@@ -7,20 +7,28 @@ import (
 	"os"
 
 	"github.com/titodelerinofilho/df-planning-poker-discord-bot/internal/platform/config"
+	"github.com/titodelerinofilho/df-planning-poker-discord-bot/internal/platform/logging"
 )
 
-const startupMessage = "df planning poker bot started"
+const (
+	appVersion               = "dev"
+	startupCorrelationID     = "startup"
+	startupMessage           = "df planning poker bot started"
+	startupRequestOperation  = "startup.request"
+	startupResponseOperation = "startup.response"
+)
 
 func main() {
-	err := run(context.Background(), os.Stdout)
+	err := run(context.Background(), os.Stdout, os.Stderr)
 
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		handlers := logging.NewBootstrapHandlers(os.Stderr, appVersion)
+		logging.LogStartupError(context.Background(), handlers, startupCorrelationID, err)
 		os.Exit(1)
 	}
 }
 
-func run(ctx context.Context, stdout io.Writer) error {
+func run(ctx context.Context, stdout io.Writer, stderr io.Writer) error {
 	err := ctx.Err()
 
 	if err != nil {
@@ -33,11 +41,27 @@ func run(ctx context.Context, stdout io.Writer) error {
 		return fmt.Errorf("load configuration: %w", err)
 	}
 
-	_, err = fmt.Fprintf(stdout, "%s env=%s command_registration_mode=%s\n", startupMessage, cfg.AppEnv, cfg.CommandRegistrationMode)
+	handlers, err := logging.NewHandlers(logging.Config{
+		Environment: cfg.AppEnv,
+		Level:       cfg.LogLevel,
+		Version:     appVersion,
+		Stdout:      stdout,
+		Stderr:      stderr,
+	})
 
 	if err != nil {
-		return fmt.Errorf("write startup message: %w", err)
+		return fmt.Errorf("configure logging: %w", err)
 	}
+
+	handlers.InfoRequest(ctx, startupCorrelationID, map[string]string{
+		"operation": startupRequestOperation,
+	})
+
+	handlers.InfoResponse(ctx, startupCorrelationID, map[string]string{
+		"operation":                 startupResponseOperation,
+		"message":                   startupMessage,
+		"command_registration_mode": string(cfg.CommandRegistrationMode),
+	})
 
 	return nil
 }
