@@ -29,6 +29,10 @@ GOLANGCI_LINT=/caminho/para/golangci-lint make lint
 
 Exceções de lint documentadas: nenhuma regra específica do projeto foi desabilitada nesta fase.
 
+## CI
+
+O GitHub Actions executa build, testes, race detector, `go vet` e `golangci-lint` em pull requests e pushes para `main`. O workflow usa a versão de Go declarada em `go.mod` e cache automático do `actions/setup-go`.
+
 ## Configuração
 
 Copie `.env.example` para um arquivo local não versionado e preencha os valores reais no ambiente antes de iniciar o bot.
