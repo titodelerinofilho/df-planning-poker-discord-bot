@@ -13,10 +13,16 @@ import (
 func TestRunLogsStartupMessage(t *testing.T) {
 	setRequiredEnv(t)
 
-	stdout := newLogFile(t)
+	stdoutFile := newLogFile(t)
 	stderr := newLogFile(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	stdout := &cancelingWriter{
+		writer: stdoutFile,
+		cancel: cancel,
+		after:  2,
+	}
 
-	err := run(context.Background(), stdout, stderr)
+	err := run(ctx, stdout, stderr)
 
 	if err != nil {
 		t.Fatalf("run() error = %v", err)
@@ -28,11 +34,11 @@ func TestRunLogsStartupMessage(t *testing.T) {
 		t.Fatalf("stderr = %q, want no output", stderrOutput)
 	}
 
-	stdoutOutput := readLogFile(t, stdout)
+	stdoutOutput := readLogFile(t, stdoutFile)
 	entries := decodeMainLogEntries(t, stdoutOutput)
 
-	if len(entries) != 2 {
-		t.Fatalf("log entries = %d, want 2", len(entries))
+	if len(entries) != 4 {
+		t.Fatalf("log entries = %d, want 4", len(entries))
 	}
 
 	if entries[0]["channel"] != "requests" {
@@ -79,6 +85,22 @@ func TestRunLogsStartupMessage(t *testing.T) {
 
 	if content["command_registration_mode"] != "guild" {
 		t.Fatalf("content.command_registration_mode = %v, want guild", content["command_registration_mode"])
+	}
+
+	if entries[2]["channel"] != "requests" {
+		t.Fatalf("third channel = %v, want requests", entries[2]["channel"])
+	}
+
+	if entries[2]["correlation_identifier"] != shutdownCorrelationID {
+		t.Fatalf("third correlation_identifier = %v, want %s", entries[2]["correlation_identifier"], shutdownCorrelationID)
+	}
+
+	if entries[3]["channel"] != "responses" {
+		t.Fatalf("fourth channel = %v, want responses", entries[3]["channel"])
+	}
+
+	if entries[3]["correlation_identifier"] != shutdownCorrelationID {
+		t.Fatalf("fourth correlation_identifier = %v, want %s", entries[3]["correlation_identifier"], shutdownCorrelationID)
 	}
 }
 
@@ -217,6 +239,29 @@ func newLogFile(t *testing.T) *os.File {
 	}
 
 	return file
+}
+
+type cancelingWriter struct {
+	writer io.Writer
+	cancel context.CancelFunc
+	after  int
+	writes int
+}
+
+func (writer *cancelingWriter) Write(content []byte) (int, error) {
+	written, err := writer.writer.Write(content)
+
+	if err != nil {
+		return written, err
+	}
+
+	writer.writes++
+
+	if writer.writes == writer.after {
+		writer.cancel()
+	}
+
+	return written, nil
 }
 
 func readLogFile(t *testing.T, file *os.File) string {
