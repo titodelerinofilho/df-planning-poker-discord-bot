@@ -32,3 +32,7 @@ Os canais seguem esta separação:
 - `requests`: STDOUT, nível `INFO`.
 - `responses`: STDOUT, nível `INFO`.
 - `database_queries`: STDOUT, nível `INFO`.
+
+## Encerramento
+
+O processo trata `SIGINT` e `SIGTERM`, cancela o contexto raiz e executa o fechamento de recursos respeitando `SHUTDOWN_TIMEOUT`.

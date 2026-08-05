@@ -8,18 +8,26 @@ import (
 
 	"github.com/titodelerinofilho/df-planning-poker-discord-bot/internal/platform/config"
 	"github.com/titodelerinofilho/df-planning-poker-discord-bot/internal/platform/logging"
+	"github.com/titodelerinofilho/df-planning-poker-discord-bot/internal/platform/shutdown"
 )
 
 const (
 	appVersion               = "dev"
 	startupCorrelationID     = "startup"
+	shutdownCorrelationID    = "shutdown"
 	startupMessage           = "df planning poker bot started"
+	shutdownMessage          = "df planning poker bot stopped"
 	startupRequestOperation  = "startup.request"
 	startupResponseOperation = "startup.response"
+	shutdownRequestOperation = "shutdown.request"
+	shutdownCloseOperation   = "shutdown.close"
 )
 
 func main() {
-	err := run(context.Background(), os.Stdout, os.Stderr)
+	ctx, stop := shutdown.Context(context.Background())
+	defer stop()
+
+	err := run(ctx, os.Stdout, os.Stderr)
 
 	if err != nil {
 		handlers := logging.NewBootstrapHandlers(os.Stderr, appVersion)
@@ -61,6 +69,27 @@ func run(ctx context.Context, stdout io.Writer, stderr io.Writer) error {
 		"operation":                 startupResponseOperation,
 		"message":                   startupMessage,
 		"command_registration_mode": string(cfg.CommandRegistrationMode),
+	})
+
+	err = shutdown.Wait(ctx)
+
+	if err != nil {
+		return err
+	}
+
+	handlers.InfoRequest(ctx, shutdownCorrelationID, map[string]string{
+		"operation": shutdownRequestOperation,
+	})
+
+	err = shutdown.Close(context.Background(), cfg.ShutdownTimeout)
+
+	if err != nil {
+		return fmt.Errorf("shutdown resources: %w", err)
+	}
+
+	handlers.InfoResponse(ctx, shutdownCorrelationID, map[string]string{
+		"operation": shutdownCloseOperation,
+		"message":   shutdownMessage,
 	})
 
 	return nil
