@@ -4,10 +4,11 @@ GOCACHE ?= $(CURDIR)/.cache/go-build
 GOLANGCI_LINT_CACHE ?= $(CURDIR)/.cache/golangci-lint
 BIN_DIR ?= bin
 BOT_BIN ?= $(BIN_DIR)/bot
+DOCKER_IMAGE ?= df-planning-poker-discord-bot
 BOT_PACKAGE := ./cmd/bot
 PACKAGES := ./...
 
-.PHONY: run test test-race vet lint build clean
+.PHONY: run test test-race vet lint build docker-build clean
 
 run:
 	GOCACHE=$(GOCACHE) $(GO) run $(BOT_PACKAGE)
@@ -32,6 +33,9 @@ lint:
 build:
 	mkdir -p $(BIN_DIR)
 	GOCACHE=$(GOCACHE) $(GO) build -o $(BOT_BIN) $(BOT_PACKAGE)
+
+docker-build:
+	docker build -t $(DOCKER_IMAGE) .
 
 clean:
 	rm -rf $(BIN_DIR) .cache
