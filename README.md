@@ -6,6 +6,19 @@ Bot de Planning Poker para Discord escrito em Go.
 
 Este repositório segue o fluxo descrito em `AGENTS.md`, `CODEX.md` e `ROADMAP.md`: uma issue por vez, monólito modular e regras de domínio isoladas de Discord e PostgreSQL.
 
+Comandos principais:
+
+```bash
+make run
+make test
+make test-race
+make vet
+make lint
+make build
+```
+
+Os comandos usam `GOCACHE=.cache/go-build` por padrão para manter o cache local ao workspace. O alvo `lint` executa `golangci-lint run` quando a ferramenta estiver instalada; a configuração formal do linter está prevista na issue `0.2.1`.
+
 ## Configuração
 
 Copie `.env.example` para um arquivo local não versionado e preencha os valores reais no ambiente antes de iniciar o bot.
