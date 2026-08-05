@@ -1,5 +1,7 @@
 GO ?= go
+GOLANGCI_LINT ?= golangci-lint
 GOCACHE ?= $(CURDIR)/.cache/go-build
+GOLANGCI_LINT_CACHE ?= $(CURDIR)/.cache/golangci-lint
 BIN_DIR ?= bin
 BOT_BIN ?= $(BIN_DIR)/bot
 BOT_PACKAGE := ./cmd/bot
@@ -20,10 +22,11 @@ vet:
 	GOCACHE=$(GOCACHE) $(GO) vet $(PACKAGES)
 
 lint:
-	@if command -v golangci-lint >/dev/null 2>&1; then \
-		golangci-lint run; \
+	@if command -v $(GOLANGCI_LINT) >/dev/null 2>&1; then \
+		GOCACHE=$(GOCACHE) GOLANGCI_LINT_CACHE=$(GOLANGCI_LINT_CACHE) $(GOLANGCI_LINT) run; \
 	else \
-		echo "golangci-lint is not installed yet; lint configuration is planned in issue 0.2.1"; \
+		echo "golangci-lint is not installed. Install it from https://golangci-lint.run/welcome/install/"; \
+		exit 127; \
 	fi
 
 build:

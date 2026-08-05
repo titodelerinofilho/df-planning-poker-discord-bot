@@ -220,11 +220,20 @@ func unsetRequiredEnv(t *testing.T) {
 	t.Cleanup(func() {
 		for _, name := range names {
 			if !present[name] {
-				os.Unsetenv(name)
+				err := os.Unsetenv(name)
+
+				if err != nil {
+					t.Fatalf("restore unset %s: %v", name, err)
+				}
+
 				continue
 			}
 
-			os.Setenv(name, original[name])
+			err := os.Setenv(name, original[name])
+
+			if err != nil {
+				t.Fatalf("restore set %s: %v", name, err)
+			}
 		}
 	})
 }

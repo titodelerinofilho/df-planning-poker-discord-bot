@@ -17,7 +17,17 @@ make lint
 make build
 ```
 
-Os comandos usam `GOCACHE=.cache/go-build` por padrão para manter o cache local ao workspace. O alvo `lint` executa `golangci-lint run` quando a ferramenta estiver instalada; a configuração formal do linter está prevista na issue `0.2.1`.
+Os comandos usam `GOCACHE=.cache/go-build` por padrão para manter o cache local ao workspace.
+
+Para executar `make lint`, instale o `golangci-lint` seguindo a documentação oficial do projeto. A configuração local fica em `.golangci.yml` e usa o formato v2 do `golangci-lint`.
+
+Esta configuração foi validada com `golangci-lint v2.8.0`, compatível com o Go 1.24 definido no módulo. Caso o binário esteja fora do `PATH`, use:
+
+```bash
+GOLANGCI_LINT=/caminho/para/golangci-lint make lint
+```
+
+Exceções de lint documentadas: nenhuma regra específica do projeto foi desabilitada nesta fase.
 
 ## Configuração
 
