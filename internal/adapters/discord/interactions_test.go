@@ -103,6 +103,40 @@ func TestHandleInteractionCreateIgnoresNonCommandInteraction(t *testing.T) {
 	}
 }
 
+func TestHandleInteractionCreateRoutesComponent(t *testing.T) {
+	session := &fakeSession{}
+	bot := newBot(session)
+	calls := 0
+	bot.components.Handle(componentRoute{Namespace: "planning", Action: "join"}, func(*discordgo.InteractionCreate, componentRoute) error {
+		calls++
+
+		return nil
+	})
+	event := messageComponentInteraction("planning:join:session-123")
+
+	err := bot.handleInteractionCreate(event)
+
+	if err != nil {
+		t.Fatalf("handleInteractionCreate() error = %v", err)
+	}
+
+	if calls != 1 {
+		t.Fatalf("component handler calls = %d, want 1", calls)
+	}
+}
+
+func TestHandleInteractionCreateRejectsInvalidComponentID(t *testing.T) {
+	session := &fakeSession{}
+	bot := newBot(session)
+	event := messageComponentInteraction("invalid")
+
+	err := bot.handleInteractionCreate(event)
+
+	if !errors.Is(err, ErrComponentIDInvalid) {
+		t.Fatalf("handleInteractionCreate() error = %v, want invalid component id", err)
+	}
+}
+
 func TestHandleInteractionCreateReturnsResponseError(t *testing.T) {
 	respondErr := errors.New("discord respond")
 	session := &fakeSession{interactionRespondErr: respondErr}
@@ -144,6 +178,19 @@ func applicationCommandInteraction(name string) *discordgo.InteractionCreate {
 			Type:  discordgo.InteractionApplicationCommand,
 			Data: discordgo.ApplicationCommandInteractionData{
 				Name: name,
+			},
+		},
+	}
+}
+
+func messageComponentInteraction(customID string) *discordgo.InteractionCreate {
+	return &discordgo.InteractionCreate{
+		Interaction: &discordgo.Interaction{
+			ID:    "interaction-id",
+			Token: "interaction-token",
+			Type:  discordgo.InteractionMessageComponent,
+			Data: discordgo.MessageComponentInteractionData{
+				CustomID: customID,
 			},
 		},
 	}

@@ -13,8 +13,9 @@ import (
 const botTokenPrefix = "Bot "
 
 type Bot struct {
-	session gatewaySession
-	router  *commandRouter
+	session    gatewaySession
+	router     *commandRouter
+	components *componentRouter
 
 	mu     sync.Mutex
 	opened bool
@@ -100,6 +101,7 @@ func newBot(session gatewaySession) *Bot {
 		session: session,
 	}
 	bot.router = newDefaultCommandRouter(bot)
+	bot.components = newDefaultComponentRouter(bot)
 
 	session.AddInteractionCreateHandler(func(interaction *discordgo.InteractionCreate) {
 		_ = bot.handleInteractionCreate(interaction)

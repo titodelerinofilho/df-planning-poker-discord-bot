@@ -9,15 +9,25 @@ func (bot *Bot) handleInteractionCreate(event *discordgo.InteractionCreate) erro
 		return nil
 	}
 
-	if event.Type != discordgo.InteractionApplicationCommand {
-		return nil
+	if event.Type == discordgo.InteractionApplicationCommand {
+		data, ok := event.Data.(discordgo.ApplicationCommandInteractionData)
+
+		if !ok {
+			return nil
+		}
+
+		return bot.router.Route(event, data)
 	}
 
-	data, ok := event.Data.(discordgo.ApplicationCommandInteractionData)
+	if event.Type == discordgo.InteractionMessageComponent {
+		data, ok := event.Data.(discordgo.MessageComponentInteractionData)
 
-	if !ok {
-		return nil
+		if !ok {
+			return nil
+		}
+
+		return bot.components.Route(event, data)
 	}
 
-	return bot.router.Route(event, data)
+	return nil
 }

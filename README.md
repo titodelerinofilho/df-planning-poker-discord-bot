@@ -84,6 +84,8 @@ A sincronização roda apenas no startup: ela cria comandos ausentes, atualiza d
 
 O comando `/ping` responde de forma efêmera com a latência básica do gateway.
 
+Componentes interativos usam `custom_id` no formato `namespace:action:resource`. O recurso deve ser um identificador opaco e não deve carregar voto, token ou informação sensível.
+
 Os logs são emitidos em JSON via `slog` e incluem os campos fixos `version`, `environment`, `channel` e `correlation_identifier`.
 
 Os canais seguem esta separação:
