@@ -4,7 +4,7 @@ Bot de Planning Poker para Discord escrito em Go.
 
 ## Desenvolvimento
 
-Este repositório segue o fluxo descrito em `AGENTS.md`, `CODEX.md` e `ROADMAP.md`: uma issue por vez, monólito modular e regras de domínio isoladas de Discord e PostgreSQL.
+Este repositório segue um fluxo de uma issue por vez, monólito modular e regras de domínio isoladas de Discord e PostgreSQL.
 
 Comandos principais:
 
