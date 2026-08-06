@@ -276,6 +276,45 @@ func TestRunSyncsGuildCommands(t *testing.T) {
 	}
 }
 
+func TestRunSyncsGlobalCommands(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("COMMAND_REGISTRATION_MODE", "global")
+	t.Setenv("DISCORD_GUILD_ID", "")
+
+	stdoutFile := newLogFile(t)
+	stderr := newLogFile(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	stdout := &cancelingWriter{
+		writer: stdoutFile,
+		cancel: cancel,
+		after:  6,
+	}
+	bot := &fakeDiscordBot{}
+	dependencies := runtimeDependencies{
+		newDiscordBot: func(string) (discordBot, error) {
+			return bot, nil
+		},
+	}
+
+	err := run(ctx, stdout, stderr, dependencies)
+
+	if err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+
+	if bot.syncGlobalCommandCalls != 1 {
+		t.Fatalf("sync global command calls = %d, want 1", bot.syncGlobalCommandCalls)
+	}
+
+	if bot.syncGuildCommandCalls != 0 {
+		t.Fatalf("sync guild command calls = %d, want 0", bot.syncGuildCommandCalls)
+	}
+
+	if bot.applicationID != "discord-application-id" {
+		t.Fatalf("application id = %q, want discord-application-id", bot.applicationID)
+	}
+}
+
 func TestRunReturnsGuildCommandSyncError(t *testing.T) {
 	setRequiredEnv(t)
 
@@ -300,34 +339,29 @@ func TestRunReturnsGuildCommandSyncError(t *testing.T) {
 	}
 }
 
-func TestRunSkipsGuildCommandSyncInGlobalMode(t *testing.T) {
+func TestRunReturnsGlobalCommandSyncError(t *testing.T) {
 	setRequiredEnv(t)
 	t.Setenv("COMMAND_REGISTRATION_MODE", "global")
 	t.Setenv("DISCORD_GUILD_ID", "")
 
-	stdoutFile := newLogFile(t)
+	stdout := newLogFile(t)
 	stderr := newLogFile(t)
-	ctx, cancel := context.WithCancel(context.Background())
-	stdout := &cancelingWriter{
-		writer: stdoutFile,
-		cancel: cancel,
-		after:  4,
-	}
-	bot := &fakeDiscordBot{}
+	syncErr := errors.New("discord api")
+	bot := &fakeDiscordBot{syncGlobalCommandsErr: syncErr}
 	dependencies := runtimeDependencies{
 		newDiscordBot: func(string) (discordBot, error) {
 			return bot, nil
 		},
 	}
 
-	err := run(ctx, stdout, stderr, dependencies)
+	err := run(context.Background(), stdout, stderr, dependencies)
 
-	if err != nil {
-		t.Fatalf("run() error = %v", err)
+	if !errors.Is(err, syncErr) {
+		t.Fatalf("run() error = %v, want sync error", err)
 	}
 
-	if bot.syncGuildCommandCalls != 0 {
-		t.Fatalf("sync guild command calls = %d, want 0", bot.syncGuildCommandCalls)
+	if bot.closeCalls != 1 {
+		t.Fatalf("discord close calls = %d, want 1", bot.closeCalls)
 	}
 }
 
@@ -373,16 +407,18 @@ func testRuntimeDependencies() runtimeDependencies {
 }
 
 type fakeDiscordBot struct {
-	openCalls             int
-	closeCalls            int
-	syncGuildCommandCalls int
+	openCalls              int
+	closeCalls             int
+	syncGuildCommandCalls  int
+	syncGlobalCommandCalls int
 
 	applicationID string
 	guildID       string
 
-	openErr              error
-	closeErr             error
-	syncGuildCommandsErr error
+	openErr               error
+	closeErr              error
+	syncGuildCommandsErr  error
+	syncGlobalCommandsErr error
 }
 
 func (bot *fakeDiscordBot) Open(context.Context) error {
@@ -403,6 +439,13 @@ func (bot *fakeDiscordBot) SyncGuildCommands(_ context.Context, applicationID st
 	bot.guildID = guildID
 
 	return bot.syncGuildCommandsErr
+}
+
+func (bot *fakeDiscordBot) SyncGlobalCommands(_ context.Context, applicationID string, _ []discordadapter.CommandDefinition) error {
+	bot.syncGlobalCommandCalls++
+	bot.applicationID = applicationID
+
+	return bot.syncGlobalCommandsErr
 }
 
 func setRequiredEnv(t *testing.T) {

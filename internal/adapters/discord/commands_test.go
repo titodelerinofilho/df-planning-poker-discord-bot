@@ -59,6 +59,46 @@ func TestSyncGuildCommandsCreatesMissingCommands(t *testing.T) {
 	}
 }
 
+func TestSyncGlobalCommandsUsesGlobalScope(t *testing.T) {
+	session := &fakeSession{}
+	bot := newBot(session)
+
+	err := bot.SyncGlobalCommands(context.Background(), "application-id", []CommandDefinition{
+		{Name: "ping", Description: "Mostra a latencia"},
+	})
+
+	if err != nil {
+		t.Fatalf("SyncGlobalCommands() error = %v", err)
+	}
+
+	if session.createCommandCalls != 1 {
+		t.Fatalf("create calls = %d, want 1", session.createCommandCalls)
+	}
+
+	if session.applicationID != "application-id" {
+		t.Fatalf("application id = %q, want application-id", session.applicationID)
+	}
+
+	if session.guildID != "" {
+		t.Fatalf("guild id = %q, want empty global guild id", session.guildID)
+	}
+}
+
+func TestSyncGuildCommandsRejectsEmptyGuildID(t *testing.T) {
+	session := &fakeSession{}
+	bot := newBot(session)
+
+	err := bot.SyncGuildCommands(context.Background(), "application-id", "", nil)
+
+	if err == nil {
+		t.Fatal("SyncGuildCommands() error = nil, want guild id error")
+	}
+
+	if session.listCommandCalls != 0 {
+		t.Fatalf("list calls = %d, want 0", session.listCommandCalls)
+	}
+}
+
 func TestSyncGuildCommandsUpdatesChangedCommands(t *testing.T) {
 	session := &fakeSession{
 		existingCommands: []*discordgo.ApplicationCommand{

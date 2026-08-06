@@ -35,25 +35,35 @@ func ManagedCommandNames(commands []CommandDefinition) []string {
 }
 
 func (bot *Bot) SyncGuildCommands(ctx context.Context, applicationID string, guildID string, commands []CommandDefinition) error {
-	return bot.syncGuildCommands(ctx, applicationID, guildID, commands, ManagedCommandNames(commands))
+	guildID = strings.TrimSpace(guildID)
+
+	if guildID == "" {
+		return fmt.Errorf("sync guild commands: guild id is required")
+	}
+
+	return bot.syncCommands(ctx, "guild", applicationID, guildID, commands, ManagedCommandNames(commands))
 }
 
 func (bot *Bot) syncGuildCommands(ctx context.Context, applicationID string, guildID string, commands []CommandDefinition, managedNames []string) error {
+	return bot.syncCommands(ctx, "guild", applicationID, guildID, commands, managedNames)
+}
+
+func (bot *Bot) SyncGlobalCommands(ctx context.Context, applicationID string, commands []CommandDefinition) error {
+	return bot.syncCommands(ctx, "global", applicationID, "", commands, ManagedCommandNames(commands))
+}
+
+func (bot *Bot) syncCommands(ctx context.Context, scope string, applicationID string, guildID string, commands []CommandDefinition, managedNames []string) error {
 	err := ctx.Err()
 
 	if err != nil {
-		return fmt.Errorf("sync guild commands: %w", err)
+		return fmt.Errorf("sync %s commands: %w", scope, err)
 	}
 
 	applicationID = strings.TrimSpace(applicationID)
 	guildID = strings.TrimSpace(guildID)
 
 	if applicationID == "" {
-		return fmt.Errorf("sync guild commands: application id is required")
-	}
-
-	if guildID == "" {
-		return fmt.Errorf("sync guild commands: guild id is required")
+		return fmt.Errorf("sync %s commands: application id is required", scope)
 	}
 
 	desired, err := commandMap(commands)
@@ -71,7 +81,7 @@ func (bot *Bot) syncGuildCommands(ctx context.Context, applicationID string, gui
 	existingCommands, err := bot.session.ApplicationCommands(applicationID, guildID)
 
 	if err != nil {
-		return fmt.Errorf("list guild commands: %w", err)
+		return fmt.Errorf("list %s commands: %w", scope, err)
 	}
 
 	existing := make(map[string]*discordgo.ApplicationCommand, len(existingCommands))
@@ -92,7 +102,7 @@ func (bot *Bot) syncGuildCommands(ctx context.Context, applicationID string, gui
 			_, err = bot.session.ApplicationCommandCreate(applicationID, guildID, discordCommand)
 
 			if err != nil {
-				return fmt.Errorf("create guild command %q: %w", command.Name, err)
+				return fmt.Errorf("create %s command %q: %w", scope, command.Name, err)
 			}
 
 			continue
@@ -105,7 +115,7 @@ func (bot *Bot) syncGuildCommands(ctx context.Context, applicationID string, gui
 		_, err = bot.session.ApplicationCommandEdit(applicationID, guildID, existingCommand.ID, discordCommand)
 
 		if err != nil {
-			return fmt.Errorf("update guild command %q: %w", command.Name, err)
+			return fmt.Errorf("update %s command %q: %w", scope, command.Name, err)
 		}
 	}
 
@@ -120,7 +130,7 @@ func (bot *Bot) syncGuildCommands(ctx context.Context, applicationID string, gui
 		err = bot.session.ApplicationCommandDelete(applicationID, guildID, existingCommand.ID)
 
 		if err != nil {
-			return fmt.Errorf("delete guild command %q: %w", name, err)
+			return fmt.Errorf("delete %s command %q: %w", scope, name, err)
 		}
 	}
 
