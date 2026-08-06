@@ -1,0 +1,40 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-df_poker}
+      POSTGRES_USER: ${POSTGRES_USER:-df_poker}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-df_poker}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  bot:
+    build:
+      context: .
+    image: ${BOT_IMAGE:-df-planning-poker-discord-bot:local}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+      DISCORD_TOKEN: ${DISCORD_TOKEN:-replace-with-discord-bot-token}
+      DISCORD_APPLICATION_ID: ${DISCORD_APPLICATION_ID:-replace-with-discord-application-id}
+      DISCORD_GUILD_ID: ${DISCORD_GUILD_ID:-replace-with-development-guild-id}
+      DATABASE_URL: ${DATABASE_URL:-postgres://df_poker:df_poker@postgres:5432/df_poker?sslmode=disable}
+      COMMAND_REGISTRATION_MODE: ${COMMAND_REGISTRATION_MODE:-guild}
+      SESSION_EXPIRATION: ${SESSION_EXPIRATION:-24h}
+      SHUTDOWN_TIMEOUT: ${SHUTDOWN_TIMEOUT:-10s}
+    init: true
+    stop_signal: SIGTERM
+
+volumes:
+  postgres-data:

@@ -43,6 +43,17 @@ make docker-build
 
 O container espera as mesmas variáveis obrigatórias descritas na seção de configuração. Ainda não há `HEALTHCHECK` no Dockerfile porque o bot não expõe endpoint HTTP nem comando de probe nesta fase.
 
+## Compose Local
+
+O ambiente local com Docker Compose sobe o bot e um PostgreSQL com volume persistente e healthcheck via `pg_isready`.
+
+```bash
+docker compose up --build
+docker compose down
+```
+
+O Compose usa valores padrão seguros para desenvolvimento local. Para usar credenciais reais do Discord, exporte as variáveis de ambiente antes de subir os serviços ou crie um `.env` local não versionado.
+
 ## Configuração
 
 Copie `.env.example` para um arquivo local não versionado e preencha os valores reais no ambiente antes de iniciar o bot.
