@@ -86,6 +86,8 @@ O comando `/ping` responde de forma efêmera com a latência básica do gateway.
 
 Componentes interativos usam `custom_id` no formato `namespace:action:resource`. O recurso deve ser um identificador opaco e não deve carregar voto, token ou informação sensível.
 
+Mensagens apresentadas pelo bot usam controle restritivo de menções por padrão, evitando disparos acidentais de `@everyone`, cargos ou usuários a partir de conteúdo livre.
+
 Os logs são emitidos em JSON via `slog` e incluem os campos fixos `version`, `environment`, `channel` e `correlation_identifier`.
 
 Os canais seguem esta separação:

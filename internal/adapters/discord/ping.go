@@ -8,12 +8,10 @@ import (
 
 func (bot *Bot) handlePingCommand(event *discordgo.InteractionCreate) error {
 	latency := bot.session.HeartbeatLatency()
+	presenter := NewPresenter()
 	response := &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
-		Data: &discordgo.InteractionResponseData{
-			Content: fmt.Sprintf("Pong! Latencia: %dms", latency.Milliseconds()),
-			Flags:   discordgo.MessageFlagsEphemeral,
-		},
+		Data: presenter.EphemeralMessage(fmt.Sprintf("Pong! Latencia: %dms", latency.Milliseconds())),
 	}
 
 	err := bot.session.InteractionRespond(event.Interaction, response)
