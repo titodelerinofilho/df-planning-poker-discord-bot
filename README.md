@@ -72,6 +72,10 @@ Variáveis obrigatórias:
 
 O startup falha com uma mensagem clara quando uma variável obrigatória está ausente ou inválida, sem imprimir secrets.
 
+## Discord
+
+O bot inicializa uma sessão `discordgo` no startup usando `DISCORD_TOKEN` e configura somente o intent mínimo de guilds nesta fase. Comandos e handlers de interação entram nas próximas issues do roadmap.
+
 Os logs são emitidos em JSON via `slog` e incluem os campos fixos `version`, `environment`, `channel` e `correlation_identifier`.
 
 Os canais seguem esta separação:
