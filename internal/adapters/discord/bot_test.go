@@ -147,6 +147,19 @@ func TestNewBotRegistersInteractionHandler(t *testing.T) {
 	}
 }
 
+func TestNewBotConfiguresRouters(t *testing.T) {
+	session := &fakeSession{}
+	bot := newBot(session)
+
+	if bot.router == nil {
+		t.Fatal("command router is nil")
+	}
+
+	if bot.components == nil {
+		t.Fatal("component router is nil")
+	}
+}
+
 type fakeSession struct {
 	intents discordgo.Intent
 
