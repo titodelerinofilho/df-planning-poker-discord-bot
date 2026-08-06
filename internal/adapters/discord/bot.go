@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 )
@@ -22,6 +23,9 @@ type gatewaySession interface {
 	Open() error
 	Close() error
 	SetIntents(discordgo.Intent)
+	AddInteractionCreateHandler(func(*discordgo.InteractionCreate)) func()
+	HeartbeatLatency() time.Duration
+	InteractionRespond(interaction *discordgo.Interaction, response *discordgo.InteractionResponse, options ...discordgo.RequestOption) error
 	ApplicationCommands(appID, guildID string, options ...discordgo.RequestOption) ([]*discordgo.ApplicationCommand, error)
 	ApplicationCommandCreate(appID, guildID string, cmd *discordgo.ApplicationCommand, options ...discordgo.RequestOption) (*discordgo.ApplicationCommand, error)
 	ApplicationCommandEdit(appID, guildID, cmdID string, cmd *discordgo.ApplicationCommand, options ...discordgo.RequestOption) (*discordgo.ApplicationCommand, error)
@@ -91,9 +95,15 @@ func (bot *Bot) Close(ctx context.Context) error {
 func newBot(session gatewaySession) *Bot {
 	session.SetIntents(discordgo.IntentsGuilds)
 
-	return &Bot{
+	bot := &Bot{
 		session: session,
 	}
+
+	session.AddInteractionCreateHandler(func(interaction *discordgo.InteractionCreate) {
+		_ = bot.handleInteractionCreate(interaction)
+	})
+
+	return bot
 }
 
 type discordSession struct {
@@ -110,6 +120,20 @@ func (session *discordSession) Close() error {
 
 func (session *discordSession) SetIntents(intents discordgo.Intent) {
 	session.session.Identify.Intents = intents
+}
+
+func (session *discordSession) AddInteractionCreateHandler(handler func(*discordgo.InteractionCreate)) func() {
+	return session.session.AddHandler(func(_ *discordgo.Session, interaction *discordgo.InteractionCreate) {
+		handler(interaction)
+	})
+}
+
+func (session *discordSession) HeartbeatLatency() time.Duration {
+	return session.session.HeartbeatLatency()
+}
+
+func (session *discordSession) InteractionRespond(interaction *discordgo.Interaction, response *discordgo.InteractionResponse, options ...discordgo.RequestOption) error {
+	return session.session.InteractionRespond(interaction, response, options...)
 }
 
 func (session *discordSession) ApplicationCommands(appID, guildID string, options ...discordgo.RequestOption) ([]*discordgo.ApplicationCommand, error) {

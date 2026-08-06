@@ -8,6 +8,22 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
+func TestDevelopmentCommandsIncludesPing(t *testing.T) {
+	commands := DevelopmentCommands()
+
+	if len(commands) != 1 {
+		t.Fatalf("commands = %d, want 1", len(commands))
+	}
+
+	if commands[0].Name != pingCommandName {
+		t.Fatalf("command name = %q, want %q", commands[0].Name, pingCommandName)
+	}
+
+	if commands[0].Description == "" {
+		t.Fatal("command description is empty")
+	}
+}
+
 func TestSyncGuildCommandsCreatesMissingCommands(t *testing.T) {
 	session := &fakeSession{}
 	bot := newBot(session)
