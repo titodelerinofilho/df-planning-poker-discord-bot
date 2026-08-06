@@ -14,6 +14,7 @@ const botTokenPrefix = "Bot "
 
 type Bot struct {
 	session gatewaySession
+	router  *commandRouter
 
 	mu     sync.Mutex
 	opened bool
@@ -98,6 +99,7 @@ func newBot(session gatewaySession) *Bot {
 	bot := &Bot{
 		session: session,
 	}
+	bot.router = newDefaultCommandRouter(bot)
 
 	session.AddInteractionCreateHandler(func(interaction *discordgo.InteractionCreate) {
 		_ = bot.handleInteractionCreate(interaction)
