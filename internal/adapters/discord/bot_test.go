@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 )
@@ -132,6 +133,20 @@ func TestBotOpenRespectsContextCancellation(t *testing.T) {
 	}
 }
 
+func TestNewBotRegistersInteractionHandler(t *testing.T) {
+	session := &fakeSession{}
+
+	newBot(session)
+
+	if session.addInteractionCreateHandlerCalls != 1 {
+		t.Fatalf("interaction handler calls = %d, want 1", session.addInteractionCreateHandlerCalls)
+	}
+
+	if session.interactionCreateHandler == nil {
+		t.Fatal("interaction handler was not registered")
+	}
+}
+
 type fakeSession struct {
 	intents discordgo.Intent
 
@@ -140,6 +155,13 @@ type fakeSession struct {
 
 	openErr  error
 	closeErr error
+
+	addInteractionCreateHandlerCalls int
+	interactionCreateHandler         func(*discordgo.InteractionCreate)
+	heartbeatLatency                 time.Duration
+	interactionResponse              *discordgo.InteractionResponse
+	interactionRespondCalls          int
+	interactionRespondErr            error
 
 	existingCommands []*discordgo.ApplicationCommand
 
@@ -172,6 +194,24 @@ func (session *fakeSession) Close() error {
 
 func (session *fakeSession) SetIntents(intents discordgo.Intent) {
 	session.intents = intents
+}
+
+func (session *fakeSession) AddInteractionCreateHandler(handler func(*discordgo.InteractionCreate)) func() {
+	session.addInteractionCreateHandlerCalls++
+	session.interactionCreateHandler = handler
+
+	return func() {}
+}
+
+func (session *fakeSession) HeartbeatLatency() time.Duration {
+	return session.heartbeatLatency
+}
+
+func (session *fakeSession) InteractionRespond(_ *discordgo.Interaction, response *discordgo.InteractionResponse, _ ...discordgo.RequestOption) error {
+	session.interactionRespondCalls++
+	session.interactionResponse = response
+
+	return session.interactionRespondErr
 }
 
 func (session *fakeSession) ApplicationCommands(string, string, ...discordgo.RequestOption) ([]*discordgo.ApplicationCommand, error) {

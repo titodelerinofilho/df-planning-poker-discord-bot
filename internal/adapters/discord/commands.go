@@ -8,13 +8,20 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
+const pingCommandName = "ping"
+
 type CommandDefinition struct {
 	Name        string
 	Description string
 }
 
 func DevelopmentCommands() []CommandDefinition {
-	return nil
+	return []CommandDefinition{
+		{
+			Name:        pingCommandName,
+			Description: "Mostra a latencia basica do bot",
+		},
+	}
 }
 
 func ManagedCommandNames(commands []CommandDefinition) []string {
@@ -153,7 +160,7 @@ func commandNameSet(names []string) (map[string]struct{}, error) {
 	for _, name := range names {
 		name = strings.TrimSpace(name)
 
-		if "" == name {
+		if name == "" {
 			return nil, fmt.Errorf("sync guild commands: managed command name is required")
 		}
 
