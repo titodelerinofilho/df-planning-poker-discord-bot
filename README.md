@@ -33,6 +33,16 @@ Exceções de lint documentadas: nenhuma regra específica do projeto foi desabi
 
 O GitHub Actions executa build, testes, race detector, `go vet` e `golangci-lint` em pull requests e pushes para `main`. O workflow usa a versão de Go declarada em `go.mod` e cache automático do `actions/setup-go`.
 
+## Docker
+
+A imagem do bot usa build multi-stage com Go 1.24 e runtime distroless não root.
+
+```bash
+make docker-build
+```
+
+O container espera as mesmas variáveis obrigatórias descritas na seção de configuração. Ainda não há `HEALTHCHECK` no Dockerfile porque o bot não expõe endpoint HTTP nem comando de probe nesta fase.
+
 ## Configuração
 
 Copie `.env.example` para um arquivo local não versionado e preencha os valores reais no ambiente antes de iniciar o bot.
