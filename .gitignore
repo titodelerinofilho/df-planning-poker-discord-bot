@@ -2,6 +2,10 @@
 .env.*
 !.env.example
 
+AGENTS.md
+CODEX.md
+ROADMAP.md
+
 /bot
 /df-planning-poker-bot
 /bin/
