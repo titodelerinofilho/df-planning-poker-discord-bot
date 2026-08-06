@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -19,6 +20,7 @@ const (
 	startupMessage           = "df planning poker bot started"
 	discordOpenOperation     = "discord.open"
 	discordCloseOperation    = "discord.close"
+	guildCommandsOperation   = "discord.guild_commands.sync"
 	shutdownMessage          = "df planning poker bot stopped"
 	startupRequestOperation  = "startup.request"
 	startupResponseOperation = "startup.response"
@@ -42,6 +44,7 @@ func main() {
 type discordBot interface {
 	Open(context.Context) error
 	Close(context.Context) error
+	SyncGuildCommands(context.Context, string, string, []discordadapter.CommandDefinition) error
 }
 
 type runtimeDependencies struct {
@@ -110,6 +113,34 @@ func run(ctx context.Context, stdout io.Writer, stderr io.Writer, dependencies r
 	handlers.InfoResponse(ctx, startupCorrelationID, map[string]string{
 		"operation": discordOpenOperation,
 	})
+
+	if cfg.CommandRegistrationMode == config.RegistrationModeGuild {
+		commands := discordadapter.DevelopmentCommands()
+
+		handlers.InfoRequest(ctx, startupCorrelationID, map[string]string{
+			"operation":      guildCommandsOperation,
+			"application_id": cfg.DiscordApplicationID,
+			"guild_id":       cfg.DiscordGuildID,
+		})
+
+		err = discordBot.SyncGuildCommands(ctx, cfg.DiscordApplicationID, cfg.DiscordGuildID, commands)
+
+		if err != nil {
+			closeErr := shutdown.Close(context.Background(), cfg.ShutdownTimeout, discordBot.Close)
+
+			if closeErr != nil {
+				return fmt.Errorf("sync guild commands: %w", errors.Join(err, fmt.Errorf("close discord bot: %w", closeErr)))
+			}
+
+			return fmt.Errorf("sync guild commands: %w", err)
+		}
+
+		handlers.InfoResponse(ctx, startupCorrelationID, map[string]string{
+			"operation":      guildCommandsOperation,
+			"application_id": cfg.DiscordApplicationID,
+			"guild_id":       cfg.DiscordGuildID,
+		})
+	}
 
 	err = shutdown.Wait(ctx)
 

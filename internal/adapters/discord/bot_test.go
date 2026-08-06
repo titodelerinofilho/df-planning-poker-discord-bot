@@ -140,6 +140,22 @@ type fakeSession struct {
 
 	openErr  error
 	closeErr error
+
+	existingCommands []*discordgo.ApplicationCommand
+
+	listCommandCalls   int
+	createCommandCalls int
+	editCommandCalls   int
+	deleteCommandCalls int
+
+	createdCommands  []*discordgo.ApplicationCommand
+	editedCommands   []*discordgo.ApplicationCommand
+	deletedCommandID []string
+
+	listCommandsErr  error
+	createCommandErr error
+	editCommandErr   error
+	deleteCommandErr error
 }
 
 func (session *fakeSession) Open() error {
@@ -156,4 +172,32 @@ func (session *fakeSession) Close() error {
 
 func (session *fakeSession) SetIntents(intents discordgo.Intent) {
 	session.intents = intents
+}
+
+func (session *fakeSession) ApplicationCommands(string, string, ...discordgo.RequestOption) ([]*discordgo.ApplicationCommand, error) {
+	session.listCommandCalls++
+
+	return session.existingCommands, session.listCommandsErr
+}
+
+func (session *fakeSession) ApplicationCommandCreate(_ string, _ string, command *discordgo.ApplicationCommand, _ ...discordgo.RequestOption) (*discordgo.ApplicationCommand, error) {
+	session.createCommandCalls++
+	session.createdCommands = append(session.createdCommands, command)
+
+	return command, session.createCommandErr
+}
+
+func (session *fakeSession) ApplicationCommandEdit(_ string, _ string, commandID string, command *discordgo.ApplicationCommand, _ ...discordgo.RequestOption) (*discordgo.ApplicationCommand, error) {
+	session.editCommandCalls++
+	command.ID = commandID
+	session.editedCommands = append(session.editedCommands, command)
+
+	return command, session.editCommandErr
+}
+
+func (session *fakeSession) ApplicationCommandDelete(_ string, _ string, commandID string, _ ...discordgo.RequestOption) error {
+	session.deleteCommandCalls++
+	session.deletedCommandID = append(session.deletedCommandID, commandID)
+
+	return session.deleteCommandErr
 }

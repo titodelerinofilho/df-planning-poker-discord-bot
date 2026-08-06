@@ -8,6 +8,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	discordadapter "github.com/titodelerinofilho/df-planning-poker-discord-bot/internal/adapters/discord"
 )
 
 func TestRunLogsStartupMessage(t *testing.T) {
@@ -19,7 +21,7 @@ func TestRunLogsStartupMessage(t *testing.T) {
 	stdout := &cancelingWriter{
 		writer: stdoutFile,
 		cancel: cancel,
-		after:  4,
+		after:  6,
 	}
 	dependencies := runtimeDependencies{
 		newDiscordBot: func(string) (discordBot, error) {
@@ -42,8 +44,8 @@ func TestRunLogsStartupMessage(t *testing.T) {
 	stdoutOutput := readLogFile(t, stdoutFile)
 	entries := decodeMainLogEntries(t, stdoutOutput)
 
-	if len(entries) != 7 {
-		t.Fatalf("log entries = %d, want 7", len(entries))
+	if len(entries) != 9 {
+		t.Fatalf("log entries = %d, want 9", len(entries))
 	}
 
 	if entries[0]["channel"] != "requests" {
@@ -112,24 +114,40 @@ func TestRunLogsStartupMessage(t *testing.T) {
 		t.Fatalf("fifth channel = %v, want requests", entries[4]["channel"])
 	}
 
-	if entries[4]["correlation_identifier"] != shutdownCorrelationID {
-		t.Fatalf("fifth correlation_identifier = %v, want %s", entries[4]["correlation_identifier"], shutdownCorrelationID)
+	if entries[4]["correlation_identifier"] != startupCorrelationID {
+		t.Fatalf("fifth correlation_identifier = %v, want %s", entries[4]["correlation_identifier"], startupCorrelationID)
 	}
 
 	if entries[5]["channel"] != "responses" {
 		t.Fatalf("sixth channel = %v, want responses", entries[5]["channel"])
 	}
 
-	if entries[5]["correlation_identifier"] != shutdownCorrelationID {
-		t.Fatalf("sixth correlation_identifier = %v, want %s", entries[5]["correlation_identifier"], shutdownCorrelationID)
+	if entries[5]["correlation_identifier"] != startupCorrelationID {
+		t.Fatalf("sixth correlation_identifier = %v, want %s", entries[5]["correlation_identifier"], startupCorrelationID)
 	}
 
-	if entries[6]["channel"] != "responses" {
-		t.Fatalf("seventh channel = %v, want responses", entries[6]["channel"])
+	if entries[6]["channel"] != "requests" {
+		t.Fatalf("seventh channel = %v, want requests", entries[6]["channel"])
 	}
 
 	if entries[6]["correlation_identifier"] != shutdownCorrelationID {
 		t.Fatalf("seventh correlation_identifier = %v, want %s", entries[6]["correlation_identifier"], shutdownCorrelationID)
+	}
+
+	if entries[7]["channel"] != "responses" {
+		t.Fatalf("eighth channel = %v, want responses", entries[7]["channel"])
+	}
+
+	if entries[7]["correlation_identifier"] != shutdownCorrelationID {
+		t.Fatalf("eighth correlation_identifier = %v, want %s", entries[7]["correlation_identifier"], shutdownCorrelationID)
+	}
+
+	if entries[8]["channel"] != "responses" {
+		t.Fatalf("ninth channel = %v, want responses", entries[8]["channel"])
+	}
+
+	if entries[8]["correlation_identifier"] != shutdownCorrelationID {
+		t.Fatalf("ninth correlation_identifier = %v, want %s", entries[8]["correlation_identifier"], shutdownCorrelationID)
 	}
 }
 
@@ -221,6 +239,98 @@ func TestRunReturnsDiscordOpenError(t *testing.T) {
 	}
 }
 
+func TestRunSyncsGuildCommands(t *testing.T) {
+	setRequiredEnv(t)
+
+	stdoutFile := newLogFile(t)
+	stderr := newLogFile(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	stdout := &cancelingWriter{
+		writer: stdoutFile,
+		cancel: cancel,
+		after:  6,
+	}
+	bot := &fakeDiscordBot{}
+	dependencies := runtimeDependencies{
+		newDiscordBot: func(string) (discordBot, error) {
+			return bot, nil
+		},
+	}
+
+	err := run(ctx, stdout, stderr, dependencies)
+
+	if err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+
+	if bot.syncGuildCommandCalls != 1 {
+		t.Fatalf("sync guild command calls = %d, want 1", bot.syncGuildCommandCalls)
+	}
+
+	if bot.applicationID != "discord-application-id" {
+		t.Fatalf("application id = %q, want discord-application-id", bot.applicationID)
+	}
+
+	if bot.guildID != "discord-guild-id" {
+		t.Fatalf("guild id = %q, want discord-guild-id", bot.guildID)
+	}
+}
+
+func TestRunReturnsGuildCommandSyncError(t *testing.T) {
+	setRequiredEnv(t)
+
+	stdout := newLogFile(t)
+	stderr := newLogFile(t)
+	syncErr := errors.New("discord api")
+	bot := &fakeDiscordBot{syncGuildCommandsErr: syncErr}
+	dependencies := runtimeDependencies{
+		newDiscordBot: func(string) (discordBot, error) {
+			return bot, nil
+		},
+	}
+
+	err := run(context.Background(), stdout, stderr, dependencies)
+
+	if !errors.Is(err, syncErr) {
+		t.Fatalf("run() error = %v, want sync error", err)
+	}
+
+	if bot.closeCalls != 1 {
+		t.Fatalf("discord close calls = %d, want 1", bot.closeCalls)
+	}
+}
+
+func TestRunSkipsGuildCommandSyncInGlobalMode(t *testing.T) {
+	setRequiredEnv(t)
+	t.Setenv("COMMAND_REGISTRATION_MODE", "global")
+	t.Setenv("DISCORD_GUILD_ID", "")
+
+	stdoutFile := newLogFile(t)
+	stderr := newLogFile(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	stdout := &cancelingWriter{
+		writer: stdoutFile,
+		cancel: cancel,
+		after:  4,
+	}
+	bot := &fakeDiscordBot{}
+	dependencies := runtimeDependencies{
+		newDiscordBot: func(string) (discordBot, error) {
+			return bot, nil
+		},
+	}
+
+	err := run(ctx, stdout, stderr, dependencies)
+
+	if err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+
+	if bot.syncGuildCommandCalls != 0 {
+		t.Fatalf("sync guild command calls = %d, want 0", bot.syncGuildCommandCalls)
+	}
+}
+
 func TestRunClosesDiscordOnShutdown(t *testing.T) {
 	setRequiredEnv(t)
 
@@ -230,7 +340,7 @@ func TestRunClosesDiscordOnShutdown(t *testing.T) {
 	stdout := &cancelingWriter{
 		writer: stdoutFile,
 		cancel: cancel,
-		after:  4,
+		after:  6,
 	}
 	bot := &fakeDiscordBot{}
 	dependencies := runtimeDependencies{
@@ -263,10 +373,16 @@ func testRuntimeDependencies() runtimeDependencies {
 }
 
 type fakeDiscordBot struct {
-	openCalls  int
-	closeCalls int
-	openErr    error
-	closeErr   error
+	openCalls             int
+	closeCalls            int
+	syncGuildCommandCalls int
+
+	applicationID string
+	guildID       string
+
+	openErr              error
+	closeErr             error
+	syncGuildCommandsErr error
 }
 
 func (bot *fakeDiscordBot) Open(context.Context) error {
@@ -279,6 +395,14 @@ func (bot *fakeDiscordBot) Close(context.Context) error {
 	bot.closeCalls++
 
 	return bot.closeErr
+}
+
+func (bot *fakeDiscordBot) SyncGuildCommands(_ context.Context, applicationID string, guildID string, _ []discordadapter.CommandDefinition) error {
+	bot.syncGuildCommandCalls++
+	bot.applicationID = applicationID
+	bot.guildID = guildID
+
+	return bot.syncGuildCommandsErr
 }
 
 func setRequiredEnv(t *testing.T) {

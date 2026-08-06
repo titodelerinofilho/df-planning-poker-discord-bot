@@ -22,6 +22,10 @@ type gatewaySession interface {
 	Open() error
 	Close() error
 	SetIntents(discordgo.Intent)
+	ApplicationCommands(appID, guildID string, options ...discordgo.RequestOption) ([]*discordgo.ApplicationCommand, error)
+	ApplicationCommandCreate(appID, guildID string, cmd *discordgo.ApplicationCommand, options ...discordgo.RequestOption) (*discordgo.ApplicationCommand, error)
+	ApplicationCommandEdit(appID, guildID, cmdID string, cmd *discordgo.ApplicationCommand, options ...discordgo.RequestOption) (*discordgo.ApplicationCommand, error)
+	ApplicationCommandDelete(appID, guildID, cmdID string, options ...discordgo.RequestOption) error
 }
 
 func NewBot(token string) (*Bot, error) {
@@ -106,4 +110,20 @@ func (session *discordSession) Close() error {
 
 func (session *discordSession) SetIntents(intents discordgo.Intent) {
 	session.session.Identify.Intents = intents
+}
+
+func (session *discordSession) ApplicationCommands(appID, guildID string, options ...discordgo.RequestOption) ([]*discordgo.ApplicationCommand, error) {
+	return session.session.ApplicationCommands(appID, guildID, options...)
+}
+
+func (session *discordSession) ApplicationCommandCreate(appID, guildID string, cmd *discordgo.ApplicationCommand, options ...discordgo.RequestOption) (*discordgo.ApplicationCommand, error) {
+	return session.session.ApplicationCommandCreate(appID, guildID, cmd, options...)
+}
+
+func (session *discordSession) ApplicationCommandEdit(appID, guildID, cmdID string, cmd *discordgo.ApplicationCommand, options ...discordgo.RequestOption) (*discordgo.ApplicationCommand, error) {
+	return session.session.ApplicationCommandEdit(appID, guildID, cmdID, cmd, options...)
+}
+
+func (session *discordSession) ApplicationCommandDelete(appID, guildID, cmdID string, options ...discordgo.RequestOption) error {
+	return session.session.ApplicationCommandDelete(appID, guildID, cmdID, options...)
 }
