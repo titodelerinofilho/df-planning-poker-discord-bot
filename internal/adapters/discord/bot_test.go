@@ -163,6 +163,9 @@ type fakeSession struct {
 	interactionRespondCalls          int
 	interactionRespondErr            error
 
+	applicationID string
+	guildID       string
+
 	existingCommands []*discordgo.ApplicationCommand
 
 	listCommandCalls   int
@@ -214,29 +217,37 @@ func (session *fakeSession) InteractionRespond(_ *discordgo.Interaction, respons
 	return session.interactionRespondErr
 }
 
-func (session *fakeSession) ApplicationCommands(string, string, ...discordgo.RequestOption) ([]*discordgo.ApplicationCommand, error) {
+func (session *fakeSession) ApplicationCommands(applicationID string, guildID string, _ ...discordgo.RequestOption) ([]*discordgo.ApplicationCommand, error) {
 	session.listCommandCalls++
+	session.applicationID = applicationID
+	session.guildID = guildID
 
 	return session.existingCommands, session.listCommandsErr
 }
 
-func (session *fakeSession) ApplicationCommandCreate(_ string, _ string, command *discordgo.ApplicationCommand, _ ...discordgo.RequestOption) (*discordgo.ApplicationCommand, error) {
+func (session *fakeSession) ApplicationCommandCreate(applicationID string, guildID string, command *discordgo.ApplicationCommand, _ ...discordgo.RequestOption) (*discordgo.ApplicationCommand, error) {
 	session.createCommandCalls++
+	session.applicationID = applicationID
+	session.guildID = guildID
 	session.createdCommands = append(session.createdCommands, command)
 
 	return command, session.createCommandErr
 }
 
-func (session *fakeSession) ApplicationCommandEdit(_ string, _ string, commandID string, command *discordgo.ApplicationCommand, _ ...discordgo.RequestOption) (*discordgo.ApplicationCommand, error) {
+func (session *fakeSession) ApplicationCommandEdit(applicationID string, guildID string, commandID string, command *discordgo.ApplicationCommand, _ ...discordgo.RequestOption) (*discordgo.ApplicationCommand, error) {
 	session.editCommandCalls++
+	session.applicationID = applicationID
+	session.guildID = guildID
 	command.ID = commandID
 	session.editedCommands = append(session.editedCommands, command)
 
 	return command, session.editCommandErr
 }
 
-func (session *fakeSession) ApplicationCommandDelete(_ string, _ string, commandID string, _ ...discordgo.RequestOption) error {
+func (session *fakeSession) ApplicationCommandDelete(applicationID string, guildID string, commandID string, _ ...discordgo.RequestOption) error {
 	session.deleteCommandCalls++
+	session.applicationID = applicationID
+	session.guildID = guildID
 	session.deletedCommandID = append(session.deletedCommandID, commandID)
 
 	return session.deleteCommandErr

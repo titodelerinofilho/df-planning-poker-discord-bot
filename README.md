@@ -76,7 +76,11 @@ O startup falha com uma mensagem clara quando uma variável obrigatória está a
 
 O bot inicializa uma sessão `discordgo` no startup usando `DISCORD_TOKEN` e configura somente o intent mínimo de guilds nesta fase.
 
-Quando `COMMAND_REGISTRATION_MODE=guild`, o startup sincroniza comandos de aplicação na guild informada por `DISCORD_GUILD_ID`. A sincronização cria comandos ausentes, atualiza definições alteradas e remove somente comandos com nomes explicitamente gerenciados pelo bot.
+Quando `COMMAND_REGISTRATION_MODE=guild`, o startup sincroniza comandos de aplicação na guild informada por `DISCORD_GUILD_ID`. Use este modo em desenvolvimento porque comandos de guild propagam rapidamente.
+
+Quando `COMMAND_REGISTRATION_MODE=global`, o startup sincroniza comandos globais da aplicação, sem usar `DISCORD_GUILD_ID`. Use este modo em produção e considere que o Discord pode levar vários minutos para propagar alterações de comandos globais.
+
+A sincronização roda apenas no startup: ela cria comandos ausentes, atualiza definições alteradas e remove somente comandos com nomes explicitamente gerenciados pelo bot. Interações recebidas não registram comandos.
 
 O comando `/ping` responde de forma efêmera com a latência básica do gateway.
 

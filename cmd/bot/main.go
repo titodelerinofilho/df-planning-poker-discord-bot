@@ -21,6 +21,7 @@ const (
 	discordOpenOperation     = "discord.open"
 	discordCloseOperation    = "discord.close"
 	guildCommandsOperation   = "discord.guild_commands.sync"
+	globalCommandsOperation  = "discord.global_commands.sync"
 	shutdownMessage          = "df planning poker bot stopped"
 	startupRequestOperation  = "startup.request"
 	startupResponseOperation = "startup.response"
@@ -45,6 +46,7 @@ type discordBot interface {
 	Open(context.Context) error
 	Close(context.Context) error
 	SyncGuildCommands(context.Context, string, string, []discordadapter.CommandDefinition) error
+	SyncGlobalCommands(context.Context, string, []discordadapter.CommandDefinition) error
 }
 
 type runtimeDependencies struct {
@@ -139,6 +141,32 @@ func run(ctx context.Context, stdout io.Writer, stderr io.Writer, dependencies r
 			"operation":      guildCommandsOperation,
 			"application_id": cfg.DiscordApplicationID,
 			"guild_id":       cfg.DiscordGuildID,
+		})
+	}
+
+	if cfg.CommandRegistrationMode == config.RegistrationModeGlobal {
+		commands := discordadapter.DevelopmentCommands()
+
+		handlers.InfoRequest(ctx, startupCorrelationID, map[string]string{
+			"operation":      globalCommandsOperation,
+			"application_id": cfg.DiscordApplicationID,
+		})
+
+		err = discordBot.SyncGlobalCommands(ctx, cfg.DiscordApplicationID, commands)
+
+		if err != nil {
+			closeErr := shutdown.Close(context.Background(), cfg.ShutdownTimeout, discordBot.Close)
+
+			if closeErr != nil {
+				return fmt.Errorf("sync global commands: %w", errors.Join(err, fmt.Errorf("close discord bot: %w", closeErr)))
+			}
+
+			return fmt.Errorf("sync global commands: %w", err)
+		}
+
+		handlers.InfoResponse(ctx, startupCorrelationID, map[string]string{
+			"operation":      globalCommandsOperation,
+			"application_id": cfg.DiscordApplicationID,
 		})
 	}
 
