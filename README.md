@@ -101,6 +101,8 @@ Os canais seguem esta separação:
 
 A escala padrão de Planning Poker é Fibonacci modificada: `0, 1, 2, 3, 5, 8, 13, 21, 34, 55, ?, ☕`. Os valores `?` e `☕` são especiais e não representam números.
 
+As estatísticas numéricas calculam mínimo, máximo, mediana e moda usando somente estimativas numéricas. Rodadas com apenas valores especiais são representadas sem resultado numérico.
+
 ## Encerramento
 
 O processo trata `SIGINT` e `SIGTERM`, cancela o contexto raiz e executa o fechamento de recursos respeitando `SHUTDOWN_TIMEOUT`.
