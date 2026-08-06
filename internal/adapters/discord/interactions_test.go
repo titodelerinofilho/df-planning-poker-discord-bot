@@ -72,8 +72,8 @@ func TestHandleInteractionCreateIgnoresUnknownCommand(t *testing.T) {
 
 	err := bot.handleInteractionCreate(event)
 
-	if err != nil {
-		t.Fatalf("handleInteractionCreate() error = %v", err)
+	if !errors.Is(err, ErrCommandRouteNotFound) {
+		t.Fatalf("handleInteractionCreate() error = %v, want route not found", err)
 	}
 
 	if session.interactionRespondCalls != 0 {
