@@ -45,6 +45,8 @@ func TestHandleInteractionCreateRespondsToPingEphemerally(t *testing.T) {
 	if response.Data.Flags != discordgo.MessageFlagsEphemeral {
 		t.Fatalf("response flags = %v, want ephemeral", response.Data.Flags)
 	}
+
+	assertNoMentions(t, response.Data.AllowedMentions)
 }
 
 func TestRegisteredInteractionHandlerHandlesPing(t *testing.T) {
