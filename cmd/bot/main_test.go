@@ -19,10 +19,15 @@ func TestRunLogsStartupMessage(t *testing.T) {
 	stdout := &cancelingWriter{
 		writer: stdoutFile,
 		cancel: cancel,
-		after:  2,
+		after:  4,
+	}
+	dependencies := runtimeDependencies{
+		newDiscordBot: func(string) (discordBot, error) {
+			return &fakeDiscordBot{}, nil
+		},
 	}
 
-	err := run(ctx, stdout, stderr)
+	err := run(ctx, stdout, stderr, dependencies)
 
 	if err != nil {
 		t.Fatalf("run() error = %v", err)
@@ -37,8 +42,8 @@ func TestRunLogsStartupMessage(t *testing.T) {
 	stdoutOutput := readLogFile(t, stdoutFile)
 	entries := decodeMainLogEntries(t, stdoutOutput)
 
-	if len(entries) != 4 {
-		t.Fatalf("log entries = %d, want 4", len(entries))
+	if len(entries) != 7 {
+		t.Fatalf("log entries = %d, want 7", len(entries))
 	}
 
 	if entries[0]["channel"] != "requests" {
@@ -91,16 +96,40 @@ func TestRunLogsStartupMessage(t *testing.T) {
 		t.Fatalf("third channel = %v, want requests", entries[2]["channel"])
 	}
 
-	if entries[2]["correlation_identifier"] != shutdownCorrelationID {
-		t.Fatalf("third correlation_identifier = %v, want %s", entries[2]["correlation_identifier"], shutdownCorrelationID)
+	if entries[2]["correlation_identifier"] != startupCorrelationID {
+		t.Fatalf("third correlation_identifier = %v, want %s", entries[2]["correlation_identifier"], startupCorrelationID)
 	}
 
 	if entries[3]["channel"] != "responses" {
 		t.Fatalf("fourth channel = %v, want responses", entries[3]["channel"])
 	}
 
-	if entries[3]["correlation_identifier"] != shutdownCorrelationID {
-		t.Fatalf("fourth correlation_identifier = %v, want %s", entries[3]["correlation_identifier"], shutdownCorrelationID)
+	if entries[3]["correlation_identifier"] != startupCorrelationID {
+		t.Fatalf("fourth correlation_identifier = %v, want %s", entries[3]["correlation_identifier"], startupCorrelationID)
+	}
+
+	if entries[4]["channel"] != "requests" {
+		t.Fatalf("fifth channel = %v, want requests", entries[4]["channel"])
+	}
+
+	if entries[4]["correlation_identifier"] != shutdownCorrelationID {
+		t.Fatalf("fifth correlation_identifier = %v, want %s", entries[4]["correlation_identifier"], shutdownCorrelationID)
+	}
+
+	if entries[5]["channel"] != "responses" {
+		t.Fatalf("sixth channel = %v, want responses", entries[5]["channel"])
+	}
+
+	if entries[5]["correlation_identifier"] != shutdownCorrelationID {
+		t.Fatalf("sixth correlation_identifier = %v, want %s", entries[5]["correlation_identifier"], shutdownCorrelationID)
+	}
+
+	if entries[6]["channel"] != "responses" {
+		t.Fatalf("seventh channel = %v, want responses", entries[6]["channel"])
+	}
+
+	if entries[6]["correlation_identifier"] != shutdownCorrelationID {
+		t.Fatalf("seventh correlation_identifier = %v, want %s", entries[6]["correlation_identifier"], shutdownCorrelationID)
 	}
 }
 
@@ -110,7 +139,7 @@ func TestRunReturnsConfigurationError(t *testing.T) {
 	stdout := newLogFile(t)
 	stderr := newLogFile(t)
 
-	err := run(context.Background(), stdout, stderr)
+	err := run(context.Background(), stdout, stderr, testRuntimeDependencies())
 
 	if err == nil {
 		t.Fatal("run() error = nil, want configuration error")
@@ -136,7 +165,7 @@ func TestRunReturnsContextError(t *testing.T) {
 	stdout := newLogFile(t)
 	stderr := newLogFile(t)
 
-	err := run(ctx, stdout, stderr)
+	err := run(ctx, stdout, stderr, testRuntimeDependencies())
 
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("run() error = %v, want context.Canceled", err)
@@ -162,7 +191,7 @@ func TestRunRejectsInvalidLogLevel(t *testing.T) {
 	stdout := newLogFile(t)
 	stderr := newLogFile(t)
 
-	err := run(context.Background(), stdout, stderr)
+	err := run(context.Background(), stdout, stderr, testRuntimeDependencies())
 
 	if err == nil {
 		t.Fatal("run() error = nil, want invalid log level error")
@@ -171,6 +200,85 @@ func TestRunRejectsInvalidLogLevel(t *testing.T) {
 	if !strings.Contains(err.Error(), "configure logging") {
 		t.Fatalf("run() error = %v, want configure logging context", err)
 	}
+}
+
+func TestRunReturnsDiscordOpenError(t *testing.T) {
+	setRequiredEnv(t)
+
+	stdout := newLogFile(t)
+	stderr := newLogFile(t)
+	openErr := errors.New("open discord")
+	dependencies := runtimeDependencies{
+		newDiscordBot: func(string) (discordBot, error) {
+			return &fakeDiscordBot{openErr: openErr}, nil
+		},
+	}
+
+	err := run(context.Background(), stdout, stderr, dependencies)
+
+	if !errors.Is(err, openErr) {
+		t.Fatalf("run() error = %v, want open discord error", err)
+	}
+}
+
+func TestRunClosesDiscordOnShutdown(t *testing.T) {
+	setRequiredEnv(t)
+
+	stdoutFile := newLogFile(t)
+	stderr := newLogFile(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	stdout := &cancelingWriter{
+		writer: stdoutFile,
+		cancel: cancel,
+		after:  4,
+	}
+	bot := &fakeDiscordBot{}
+	dependencies := runtimeDependencies{
+		newDiscordBot: func(string) (discordBot, error) {
+			return bot, nil
+		},
+	}
+
+	err := run(ctx, stdout, stderr, dependencies)
+
+	if err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+
+	if bot.openCalls != 1 {
+		t.Fatalf("discord open calls = %d, want 1", bot.openCalls)
+	}
+
+	if bot.closeCalls != 1 {
+		t.Fatalf("discord close calls = %d, want 1", bot.closeCalls)
+	}
+}
+
+func testRuntimeDependencies() runtimeDependencies {
+	return runtimeDependencies{
+		newDiscordBot: func(string) (discordBot, error) {
+			return &fakeDiscordBot{}, nil
+		},
+	}
+}
+
+type fakeDiscordBot struct {
+	openCalls  int
+	closeCalls int
+	openErr    error
+	closeErr   error
+}
+
+func (bot *fakeDiscordBot) Open(context.Context) error {
+	bot.openCalls++
+
+	return bot.openErr
+}
+
+func (bot *fakeDiscordBot) Close(context.Context) error {
+	bot.closeCalls++
+
+	return bot.closeErr
 }
 
 func setRequiredEnv(t *testing.T) {

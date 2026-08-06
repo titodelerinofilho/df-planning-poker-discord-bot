@@ -1,0 +1,159 @@
+package discord
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"github.com/bwmarrin/discordgo"
+)
+
+func TestNewBotConfiguresMinimalIntents(t *testing.T) {
+	session := &fakeSession{}
+
+	newBot(session)
+
+	if session.intents != discordgo.IntentsGuilds {
+		t.Fatalf("intents = %v, want %v", session.intents, discordgo.IntentsGuilds)
+	}
+}
+
+func TestNewBotKeepsHTTPClientTimeout(t *testing.T) {
+	bot, err := NewBot("token")
+
+	if err != nil {
+		t.Fatalf("NewBot() error = %v", err)
+	}
+
+	session, ok := bot.session.(*discordSession)
+
+	if !ok {
+		t.Fatalf("session = %T, want *discordSession", bot.session)
+	}
+
+	if session.session.Client == nil || session.session.Client.Timeout <= 0 {
+		t.Fatal("NewBot() did not keep an HTTP client timeout")
+	}
+}
+
+func TestBotOpenOpensSessionOnce(t *testing.T) {
+	session := &fakeSession{}
+	bot := newBot(session)
+
+	err := bot.Open(context.Background())
+
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+
+	err = bot.Open(context.Background())
+
+	if err != nil {
+		t.Fatalf("Open() second error = %v", err)
+	}
+
+	if session.openCalls != 1 {
+		t.Fatalf("open calls = %d, want 1", session.openCalls)
+	}
+}
+
+func TestBotOpenReturnsSessionError(t *testing.T) {
+	openErr := errors.New("gateway down")
+	session := &fakeSession{openErr: openErr}
+	bot := newBot(session)
+
+	err := bot.Open(context.Background())
+
+	if !errors.Is(err, openErr) {
+		t.Fatalf("Open() error = %v, want %v", err, openErr)
+	}
+}
+
+func TestBotCloseClosesOpenedSessionOnce(t *testing.T) {
+	session := &fakeSession{}
+	bot := newBot(session)
+
+	err := bot.Open(context.Background())
+
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+
+	err = bot.Close(context.Background())
+
+	if err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	err = bot.Close(context.Background())
+
+	if err != nil {
+		t.Fatalf("Close() second error = %v", err)
+	}
+
+	if session.closeCalls != 1 {
+		t.Fatalf("close calls = %d, want 1", session.closeCalls)
+	}
+}
+
+func TestBotCloseReturnsSessionError(t *testing.T) {
+	closeErr := errors.New("close gateway")
+	session := &fakeSession{closeErr: closeErr}
+	bot := newBot(session)
+
+	err := bot.Open(context.Background())
+
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+
+	err = bot.Close(context.Background())
+
+	if !errors.Is(err, closeErr) {
+		t.Fatalf("Close() error = %v, want %v", err, closeErr)
+	}
+}
+
+func TestBotOpenRespectsContextCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	session := &fakeSession{}
+	bot := newBot(session)
+
+	err := bot.Open(ctx)
+
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Open() error = %v, want context.Canceled", err)
+	}
+
+	if session.openCalls != 0 {
+		t.Fatalf("open calls = %d, want 0", session.openCalls)
+	}
+}
+
+type fakeSession struct {
+	intents discordgo.Intent
+
+	openCalls  int
+	closeCalls int
+
+	openErr  error
+	closeErr error
+}
+
+func (session *fakeSession) Open() error {
+	session.openCalls++
+
+	return session.openErr
+}
+
+func (session *fakeSession) Close() error {
+	session.closeCalls++
+
+	return session.closeErr
+}
+
+func (session *fakeSession) SetIntents(intents discordgo.Intent) {
+	session.intents = intents
+}
