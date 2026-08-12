@@ -1,6 +1,10 @@
 package planning
 
-import "time"
+import (
+	"slices"
+	"strings"
+	"time"
+)
 
 type RoundID string
 
@@ -18,6 +22,7 @@ type Round struct {
 	sessionID SessionID
 	number    int
 	state     RoundState
+	votes     map[DiscordUserID]Vote
 	openedAt  time.Time
 }
 
@@ -27,6 +32,7 @@ func newFirstRound(id RoundID, sessionID SessionID, openedAt time.Time) Round {
 		sessionID: sessionID,
 		number:    1,
 		state:     RoundStateOpen,
+		votes:     make(map[DiscordUserID]Vote),
 		openedAt:  openedAt,
 	}
 }
@@ -47,6 +53,50 @@ func (round Round) State() RoundState {
 	return round.state
 }
 
+func (round Round) VoteCount() int {
+	return len(round.votes)
+}
+
+func (round Round) HasVoteFrom(discordUserID DiscordUserID) bool {
+	_, ok := round.votes[discordUserID]
+
+	return ok
+}
+
+func (round Round) VotedParticipantIDs() []DiscordUserID {
+	discordUserIDs := make([]DiscordUserID, 0, len(round.votes))
+
+	for discordUserID := range round.votes {
+		discordUserIDs = append(discordUserIDs, discordUserID)
+	}
+
+	slices.SortFunc(discordUserIDs, func(left DiscordUserID, right DiscordUserID) int {
+		return strings.Compare(string(left), string(right))
+	})
+
+	return discordUserIDs
+}
+
 func (round Round) OpenedAt() time.Time {
 	return round.openedAt
+}
+
+func (round *Round) castVote(discordUserID DiscordUserID, estimate Estimate, castAt time.Time) {
+	existing, exists := round.votes[discordUserID]
+
+	if exists {
+		existing.estimate = estimate
+		existing.lastCastAt = castAt
+		round.votes[discordUserID] = existing
+
+		return
+	}
+
+	round.votes[discordUserID] = Vote{
+		roundID:       round.id,
+		discordUserID: discordUserID,
+		estimate:      estimate,
+		firstCastAt:   castAt,
+		lastCastAt:    castAt,
+	}
 }
