@@ -56,6 +56,10 @@ func TestNewSessionCreatesJoiningSession(t *testing.T) {
 		t.Fatalf("CurrentRoundNumber() = %d, want 0", session.CurrentRoundNumber())
 	}
 
+	if _, ok := session.CurrentRound(); ok {
+		t.Fatal("CurrentRound() ok = true, want false")
+	}
+
 	if !session.CreatedAt().Equal(input.CreatedAt) {
 		t.Fatalf("CreatedAt() = %s, want %s", session.CreatedAt(), input.CreatedAt)
 	}
@@ -437,6 +441,162 @@ func TestSessionParticipantsAreOrderedByJoinTime(t *testing.T) {
 	}
 }
 
+func TestSessionCloseParticipantsOpensVotingRound(t *testing.T) {
+	session := validSession(t)
+	openedAt := time.Date(2026, 8, 12, 12, 0, 0, 0, time.UTC)
+
+	joinParticipant(t, &session, DiscordUserID("user-1"), "Ana", openedAt.Add(-2*time.Minute))
+	joinParticipant(t, &session, DiscordUserID("user-2"), "Bruno", openedAt.Add(-time.Minute))
+
+	err := session.CloseParticipants(2, RoundID("round-1"), openedAt)
+
+	if err != nil {
+		t.Fatalf("CloseParticipants() error = %v", err)
+	}
+
+	if session.State() != SessionStateVoting {
+		t.Fatalf("State() = %q, want VOTING", session.State())
+	}
+
+	if session.CurrentRoundNumber() != 1 {
+		t.Fatalf("CurrentRoundNumber() = %d, want 1", session.CurrentRoundNumber())
+	}
+
+	round, ok := session.CurrentRound()
+
+	if !ok {
+		t.Fatal("CurrentRound() ok = false, want true")
+	}
+
+	if round.ID() != RoundID("round-1") {
+		t.Fatalf("round ID() = %q, want round-1", round.ID())
+	}
+
+	if round.SessionID() != session.ID() {
+		t.Fatalf("round SessionID() = %q, want %q", round.SessionID(), session.ID())
+	}
+
+	if round.Number() != 1 {
+		t.Fatalf("round Number() = %d, want 1", round.Number())
+	}
+
+	if round.State() != RoundStateOpen {
+		t.Fatalf("round State() = %q, want OPEN", round.State())
+	}
+
+	if !round.OpenedAt().Equal(openedAt) {
+		t.Fatalf("round OpenedAt() = %s, want %s", round.OpenedAt(), openedAt)
+	}
+}
+
+func TestSessionCloseParticipantsRejectsNotEnoughParticipants(t *testing.T) {
+	session := validSession(t)
+	openedAt := time.Date(2026, 8, 12, 12, 0, 0, 0, time.UTC)
+
+	joinParticipant(t, &session, DiscordUserID("user-1"), "Ana", openedAt.Add(-time.Minute))
+
+	err := session.CloseParticipants(2, RoundID("round-1"), openedAt)
+
+	if !errors.Is(err, ErrNotEnoughParticipants) {
+		t.Fatalf("CloseParticipants() error = %v, want ErrNotEnoughParticipants", err)
+	}
+
+	if session.State() != SessionStateJoining {
+		t.Fatalf("State() = %q, want JOINING", session.State())
+	}
+
+	if _, ok := session.CurrentRound(); ok {
+		t.Fatal("CurrentRound() ok = true, want false")
+	}
+}
+
+func TestSessionCloseParticipantsIgnoresInactiveParticipants(t *testing.T) {
+	session := validSession(t)
+	openedAt := time.Date(2026, 8, 12, 12, 0, 0, 0, time.UTC)
+
+	joinParticipant(t, &session, DiscordUserID("user-1"), "Ana", openedAt.Add(-2*time.Minute))
+
+	err := session.LeaveParticipant(DiscordUserID("user-1"), openedAt.Add(-time.Minute))
+
+	if err != nil {
+		t.Fatalf("LeaveParticipant() error = %v", err)
+	}
+
+	err = session.CloseParticipants(1, RoundID("round-1"), openedAt)
+
+	if !errors.Is(err, ErrNotEnoughParticipants) {
+		t.Fatalf("CloseParticipants() error = %v, want ErrNotEnoughParticipants", err)
+	}
+}
+
+func TestSessionCloseParticipantsRejectsInvalidInput(t *testing.T) {
+	tests := []struct {
+		name                string
+		minimumParticipants int
+		roundID             RoundID
+		openedAt            time.Time
+		want                error
+	}{
+		{
+			name:                "invalid minimum participants",
+			minimumParticipants: 0,
+			roundID:             RoundID("round-1"),
+			openedAt:            time.Date(2026, 8, 12, 12, 0, 0, 0, time.UTC),
+			want:                ErrInvalidParticipant,
+		},
+		{
+			name:                "missing round id",
+			minimumParticipants: 1,
+			openedAt:            time.Date(2026, 8, 12, 12, 0, 0, 0, time.UTC),
+			want:                ErrInvalidRound,
+		},
+		{
+			name:                "missing opened at",
+			minimumParticipants: 1,
+			roundID:             RoundID("round-1"),
+			want:                ErrInvalidRound,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			session := validSession(t)
+			joinParticipant(
+				t,
+				&session,
+				DiscordUserID("user-1"),
+				"Ana",
+				time.Date(2026, 8, 12, 11, 59, 0, 0, time.UTC),
+			)
+
+			err := session.CloseParticipants(tt.minimumParticipants, tt.roundID, tt.openedAt)
+
+			if !errors.Is(err, tt.want) {
+				t.Fatalf("CloseParticipants() error = %v, want %v", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestSessionCloseParticipantsRejectsInvalidState(t *testing.T) {
+	session := validSession(t)
+	openedAt := time.Date(2026, 8, 12, 12, 0, 0, 0, time.UTC)
+
+	joinParticipant(t, &session, DiscordUserID("user-1"), "Ana", openedAt.Add(-time.Minute))
+
+	err := session.CloseParticipants(1, RoundID("round-1"), openedAt)
+
+	if err != nil {
+		t.Fatalf("CloseParticipants() error = %v", err)
+	}
+
+	err = session.CloseParticipants(1, RoundID("round-2"), openedAt.Add(time.Minute))
+
+	if !errors.Is(err, ErrSessionNotOpen) {
+		t.Fatalf("CloseParticipants() error = %v, want ErrSessionNotOpen", err)
+	}
+}
+
 func validNewSessionInput() NewSessionInput {
 	createdAt := time.Date(2026, 8, 12, 10, 0, 0, 0, time.UTC)
 
@@ -465,4 +625,14 @@ func validSession(t *testing.T) Session {
 	}
 
 	return session
+}
+
+func joinParticipant(t *testing.T, session *Session, discordUserID DiscordUserID, displayName string, joinedAt time.Time) {
+	t.Helper()
+
+	err := session.JoinParticipant(discordUserID, displayName, joinedAt)
+
+	if err != nil {
+		t.Fatalf("JoinParticipant() error = %v", err)
+	}
 }
