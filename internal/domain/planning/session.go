@@ -16,6 +16,7 @@ var ErrAlreadyParticipant = errors.New("user already participates")
 var ErrInvalidParticipant = errors.New("invalid participant")
 var ErrNotEnoughParticipants = errors.New("not enough participants")
 var ErrInvalidRound = errors.New("invalid round")
+var ErrVoteNotAllowed = errors.New("vote is not allowed")
 
 type SessionState string
 
@@ -273,6 +274,50 @@ func (session *Session) CloseParticipants(minimumParticipants int, roundID Round
 	session.currentRound = newFirstRound(roundID, session.id, openedAt)
 	session.hasCurrentRound = true
 	session.currentRoundNumber = session.currentRound.number
+	session.state = SessionStateVoting
+
+	return nil
+}
+
+func (session *Session) CastVote(discordUserID DiscordUserID, estimate Estimate, castAt time.Time) error {
+	if session.state != SessionStateVoting && session.state != SessionStateReadyToReveal {
+		return fmt.Errorf("%w: session is not accepting votes", ErrVoteNotAllowed)
+	}
+
+	if !session.hasCurrentRound {
+		return fmt.Errorf("%w: current round is required", ErrInvalidRound)
+	}
+
+	if session.currentRound.state != RoundStateOpen && session.currentRound.state != RoundStateReady {
+		return fmt.Errorf("%w: round is not accepting votes", ErrVoteNotAllowed)
+	}
+
+	if castAt.IsZero() {
+		return fmt.Errorf("%w: cast at is required", ErrVoteNotAllowed)
+	}
+
+	participant, exists := session.participants[discordUserID]
+
+	if !exists || !participant.active {
+		return fmt.Errorf("%w: %s", ErrParticipantNotFound, discordUserID)
+	}
+
+	err := session.scale.Validate(estimate)
+
+	if err != nil {
+		return err
+	}
+
+	session.currentRound.castVote(discordUserID, estimate, castAt)
+
+	if session.currentRound.VoteCount() == len(session.ActiveParticipants()) {
+		session.currentRound.state = RoundStateReady
+		session.state = SessionStateReadyToReveal
+
+		return nil
+	}
+
+	session.currentRound.state = RoundStateOpen
 	session.state = SessionStateVoting
 
 	return nil

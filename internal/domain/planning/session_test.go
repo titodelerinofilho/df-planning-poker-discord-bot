@@ -597,6 +597,253 @@ func TestSessionCloseParticipantsRejectsInvalidState(t *testing.T) {
 	}
 }
 
+func TestSessionCastVoteRecordsVote(t *testing.T) {
+	session := votingSession(t, 2)
+	castAt := time.Date(2026, 8, 12, 12, 10, 0, 0, time.UTC)
+
+	err := session.CastVote(DiscordUserID("user-1"), NewEstimate("5"), castAt)
+
+	if err != nil {
+		t.Fatalf("CastVote() error = %v", err)
+	}
+
+	if session.State() != SessionStateVoting {
+		t.Fatalf("State() = %q, want VOTING", session.State())
+	}
+
+	round, ok := session.CurrentRound()
+
+	if !ok {
+		t.Fatal("CurrentRound() ok = false, want true")
+	}
+
+	if round.State() != RoundStateOpen {
+		t.Fatalf("round State() = %q, want OPEN", round.State())
+	}
+
+	if round.VoteCount() != 1 {
+		t.Fatalf("round VoteCount() = %d, want 1", round.VoteCount())
+	}
+
+	if !round.HasVoteFrom(DiscordUserID("user-1")) {
+		t.Fatal("round HasVoteFrom(user-1) = false, want true")
+	}
+
+	vote := round.votes[DiscordUserID("user-1")]
+
+	if vote.RoundID() != round.ID() {
+		t.Fatalf("vote RoundID() = %q, want %q", vote.RoundID(), round.ID())
+	}
+
+	if vote.Estimate().String() != "5" {
+		t.Fatalf("vote Estimate() = %q, want 5", vote.Estimate())
+	}
+
+	if !vote.FirstCastAt().Equal(castAt) {
+		t.Fatalf("vote FirstCastAt() = %s, want %s", vote.FirstCastAt(), castAt)
+	}
+
+	if !vote.LastCastAt().Equal(castAt) {
+		t.Fatalf("vote LastCastAt() = %s, want %s", vote.LastCastAt(), castAt)
+	}
+}
+
+func TestSessionCastVoteMarksRoundReadyWhenAllParticipantsVoted(t *testing.T) {
+	session := votingSession(t, 2)
+	baseTime := time.Date(2026, 8, 12, 12, 10, 0, 0, time.UTC)
+
+	err := session.CastVote(DiscordUserID("user-1"), NewEstimate("5"), baseTime)
+
+	if err != nil {
+		t.Fatalf("CastVote() error = %v", err)
+	}
+
+	err = session.CastVote(DiscordUserID("user-2"), NewEstimate("8"), baseTime.Add(time.Minute))
+
+	if err != nil {
+		t.Fatalf("CastVote() error = %v", err)
+	}
+
+	if session.State() != SessionStateReadyToReveal {
+		t.Fatalf("State() = %q, want READY_TO_REVEAL", session.State())
+	}
+
+	round, ok := session.CurrentRound()
+
+	if !ok {
+		t.Fatal("CurrentRound() ok = false, want true")
+	}
+
+	if round.State() != RoundStateReady {
+		t.Fatalf("round State() = %q, want READY", round.State())
+	}
+
+	got := round.VotedParticipantIDs()
+	want := []DiscordUserID{
+		DiscordUserID("user-1"),
+		DiscordUserID("user-2"),
+	}
+
+	if !slices.Equal(got, want) {
+		t.Fatalf("round VotedParticipantIDs() = %#v, want %#v", got, want)
+	}
+}
+
+func TestSessionCastVoteAllowsChangeBeforeReveal(t *testing.T) {
+	session := votingSession(t, 1)
+	firstCastAt := time.Date(2026, 8, 12, 12, 10, 0, 0, time.UTC)
+	secondCastAt := firstCastAt.Add(2 * time.Minute)
+
+	err := session.CastVote(DiscordUserID("user-1"), NewEstimate("5"), firstCastAt)
+
+	if err != nil {
+		t.Fatalf("CastVote() error = %v", err)
+	}
+
+	err = session.CastVote(DiscordUserID("user-1"), NewEstimate("8"), secondCastAt)
+
+	if err != nil {
+		t.Fatalf("CastVote() error = %v", err)
+	}
+
+	round, ok := session.CurrentRound()
+
+	if !ok {
+		t.Fatal("CurrentRound() ok = false, want true")
+	}
+
+	if round.VoteCount() != 1 {
+		t.Fatalf("round VoteCount() = %d, want 1", round.VoteCount())
+	}
+
+	vote := round.votes[DiscordUserID("user-1")]
+
+	if vote.Estimate().String() != "8" {
+		t.Fatalf("vote Estimate() = %q, want 8", vote.Estimate())
+	}
+
+	if !vote.FirstCastAt().Equal(firstCastAt) {
+		t.Fatalf("vote FirstCastAt() = %s, want %s", vote.FirstCastAt(), firstCastAt)
+	}
+
+	if !vote.LastCastAt().Equal(secondCastAt) {
+		t.Fatalf("vote LastCastAt() = %s, want %s", vote.LastCastAt(), secondCastAt)
+	}
+
+	if session.State() != SessionStateReadyToReveal {
+		t.Fatalf("State() = %q, want READY_TO_REVEAL", session.State())
+	}
+}
+
+func TestSessionCastVoteRejectsUnknownParticipant(t *testing.T) {
+	session := votingSession(t, 1)
+
+	err := session.CastVote(
+		DiscordUserID("unknown-user"),
+		NewEstimate("5"),
+		time.Date(2026, 8, 12, 12, 10, 0, 0, time.UTC),
+	)
+
+	if !errors.Is(err, ErrParticipantNotFound) {
+		t.Fatalf("CastVote() error = %v, want ErrParticipantNotFound", err)
+	}
+}
+
+func TestSessionCastVoteRejectsInactiveParticipant(t *testing.T) {
+	session := validSession(t)
+	openedAt := time.Date(2026, 8, 12, 12, 0, 0, 0, time.UTC)
+
+	joinParticipant(t, &session, DiscordUserID("user-1"), "Ana", openedAt.Add(-2*time.Minute))
+	joinParticipant(t, &session, DiscordUserID("user-2"), "Bruno", openedAt.Add(-time.Minute))
+
+	err := session.LeaveParticipant(DiscordUserID("user-1"), openedAt.Add(-30*time.Second))
+
+	if err != nil {
+		t.Fatalf("LeaveParticipant() error = %v", err)
+	}
+
+	err = session.CloseParticipants(1, RoundID("round-1"), openedAt)
+
+	if err != nil {
+		t.Fatalf("CloseParticipants() error = %v", err)
+	}
+
+	err = session.CastVote(DiscordUserID("user-1"), NewEstimate("5"), openedAt.Add(10*time.Minute))
+
+	if !errors.Is(err, ErrParticipantNotFound) {
+		t.Fatalf("CastVote() error = %v, want ErrParticipantNotFound", err)
+	}
+}
+
+func TestSessionCastVoteRejectsInvalidEstimate(t *testing.T) {
+	session := votingSession(t, 1)
+
+	err := session.CastVote(
+		DiscordUserID("user-1"),
+		NewEstimate("100"),
+		time.Date(2026, 8, 12, 12, 10, 0, 0, time.UTC),
+	)
+
+	if !errors.Is(err, ErrInvalidEstimate) {
+		t.Fatalf("CastVote() error = %v, want ErrInvalidEstimate", err)
+	}
+}
+
+func TestSessionCastVoteRejectsInvalidState(t *testing.T) {
+	session := validSession(t)
+
+	err := session.CastVote(
+		DiscordUserID("user-1"),
+		NewEstimate("5"),
+		time.Date(2026, 8, 12, 12, 10, 0, 0, time.UTC),
+	)
+
+	if !errors.Is(err, ErrVoteNotAllowed) {
+		t.Fatalf("CastVote() error = %v, want ErrVoteNotAllowed", err)
+	}
+}
+
+func TestSessionCastVoteRejectsRevealedRound(t *testing.T) {
+	session := votingSession(t, 1)
+	session.state = SessionStateRevealed
+	session.currentRound.state = RoundStateRevealed
+
+	err := session.CastVote(
+		DiscordUserID("user-1"),
+		NewEstimate("5"),
+		time.Date(2026, 8, 12, 12, 10, 0, 0, time.UTC),
+	)
+
+	if !errors.Is(err, ErrVoteNotAllowed) {
+		t.Fatalf("CastVote() error = %v, want ErrVoteNotAllowed", err)
+	}
+}
+
+func TestSessionCastVoteRejectsMissingCurrentRound(t *testing.T) {
+	session := validSession(t)
+	session.state = SessionStateVoting
+
+	err := session.CastVote(
+		DiscordUserID("user-1"),
+		NewEstimate("5"),
+		time.Date(2026, 8, 12, 12, 10, 0, 0, time.UTC),
+	)
+
+	if !errors.Is(err, ErrInvalidRound) {
+		t.Fatalf("CastVote() error = %v, want ErrInvalidRound", err)
+	}
+}
+
+func TestSessionCastVoteRejectsMissingCastAt(t *testing.T) {
+	session := votingSession(t, 1)
+
+	err := session.CastVote(DiscordUserID("user-1"), NewEstimate("5"), time.Time{})
+
+	if !errors.Is(err, ErrVoteNotAllowed) {
+		t.Fatalf("CastVote() error = %v, want ErrVoteNotAllowed", err)
+	}
+}
+
 func validNewSessionInput() NewSessionInput {
 	createdAt := time.Date(2026, 8, 12, 10, 0, 0, 0, time.UTC)
 
@@ -635,4 +882,26 @@ func joinParticipant(t *testing.T, session *Session, discordUserID DiscordUserID
 	if err != nil {
 		t.Fatalf("JoinParticipant() error = %v", err)
 	}
+}
+
+func votingSession(t *testing.T, participantCount int) Session {
+	t.Helper()
+
+	session := validSession(t)
+	openedAt := time.Date(2026, 8, 12, 12, 0, 0, 0, time.UTC)
+
+	for index := range participantCount {
+		discordUserID := DiscordUserID("user-" + string(rune('1'+index)))
+		displayName := "User " + string(rune('1'+index))
+
+		joinParticipant(t, &session, discordUserID, displayName, openedAt.Add(-time.Duration(index+1)*time.Minute))
+	}
+
+	err := session.CloseParticipants(participantCount, RoundID("round-1"), openedAt)
+
+	if err != nil {
+		t.Fatalf("CloseParticipants() error = %v", err)
+	}
+
+	return session
 }

@@ -109,6 +109,8 @@ Enquanto a sessão está em `JOINING`, participantes podem entrar e sair. O dom�
 
 Ao fechar a lista de participantes, a sessão exige a quantidade mínima configurada de participantes ativos, muda para `VOTING` e cria a primeira rodada em estado `OPEN`.
 
+Durante `VOTING`, somente participantes ativos podem votar usando valores da escala da sessão. O participante pode alterar o voto antes da revelação, e quando todos os participantes ativos votam a sessão muda para `READY_TO_REVEAL`.
+
 ## Encerramento
 
 O processo trata `SIGINT` e `SIGTERM`, cancela o contexto raiz e executa o fechamento de recursos respeitando `SHUTDOWN_TIMEOUT`.
