@@ -18,6 +18,7 @@ var ErrNotEnoughParticipants = errors.New("not enough participants")
 var ErrInvalidRound = errors.New("invalid round")
 var ErrVoteNotAllowed = errors.New("vote is not allowed")
 var ErrRevealNotAllowed = errors.New("reveal is not allowed")
+var ErrRestartRoundNotAllowed = errors.New("restart round is not allowed")
 
 type SessionState string
 
@@ -78,6 +79,7 @@ type Session struct {
 	facilitatorID      DiscordUserID
 	scale              Scale
 	participants       map[DiscordUserID]Participant
+	previousRounds     []Round
 	currentRound       Round
 	hasCurrentRound    bool
 	state              SessionState
@@ -178,6 +180,17 @@ func (session Session) ActiveParticipants() []Participant {
 
 func (session Session) CurrentRound() (Round, bool) {
 	return session.currentRound, session.hasCurrentRound
+}
+
+func (session Session) Rounds() []Round {
+	rounds := make([]Round, 0, len(session.previousRounds)+1)
+	rounds = append(rounds, session.previousRounds...)
+
+	if session.hasCurrentRound {
+		rounds = append(rounds, session.currentRound)
+	}
+
+	return rounds
 }
 
 func (session Session) State() SessionState {
@@ -364,6 +377,36 @@ func (session *Session) RevealRound(revealedAt time.Time) (RoundRevealResult, er
 		statistics,
 		revealedAt,
 	), nil
+}
+
+func (session *Session) RestartRound(roundID RoundID, openedAt time.Time) error {
+	if session.state != SessionStateRevealed {
+		return fmt.Errorf("%w: session round is not revealed", ErrRestartRoundNotAllowed)
+	}
+
+	if !session.hasCurrentRound {
+		return fmt.Errorf("%w: current round is required", ErrInvalidRound)
+	}
+
+	if session.currentRound.state != RoundStateRevealed {
+		return fmt.Errorf("%w: current round is not revealed", ErrRestartRoundNotAllowed)
+	}
+
+	if roundID == "" {
+		return fmt.Errorf("%w: round id is required", ErrInvalidRound)
+	}
+
+	if openedAt.IsZero() {
+		return fmt.Errorf("%w: opened at is required", ErrInvalidRound)
+	}
+
+	session.currentRound.close(openedAt)
+	session.previousRounds = append(session.previousRounds, session.currentRound)
+	session.currentRoundNumber++
+	session.currentRound = newRound(roundID, session.id, session.currentRoundNumber, openedAt)
+	session.state = SessionStateVoting
+
+	return nil
 }
 
 func validateNewSessionInput(input NewSessionInput) error {
