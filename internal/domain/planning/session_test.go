@@ -56,12 +56,20 @@ func TestNewSessionCreatesJoiningSession(t *testing.T) {
 		t.Fatalf("CurrentRoundNumber() = %d, want 0", session.CurrentRoundNumber())
 	}
 
+	if _, ok := session.FinalEstimate(); ok {
+		t.Fatal("FinalEstimate() ok = true, want false")
+	}
+
 	if _, ok := session.CurrentRound(); ok {
 		t.Fatal("CurrentRound() ok = true, want false")
 	}
 
 	if !session.CreatedAt().Equal(input.CreatedAt) {
 		t.Fatalf("CreatedAt() = %s, want %s", session.CreatedAt(), input.CreatedAt)
+	}
+
+	if !session.CompletedAt().IsZero() {
+		t.Fatalf("CompletedAt() = %s, want zero time", session.CompletedAt())
 	}
 
 	if !session.ExpiresAt().Equal(input.ExpiresAt) {
@@ -1237,6 +1245,151 @@ func TestSessionRestartRoundRejectsInvalidInput(t *testing.T) {
 				t.Fatalf("RestartRound() error = %v, want ErrInvalidRound", err)
 			}
 		})
+	}
+}
+
+func TestSessionCompleteRecordsFinalEstimate(t *testing.T) {
+	session := revealedSession(t, 2)
+	completedAt := time.Date(2026, 8, 12, 12, 30, 0, 0, time.UTC)
+
+	err := session.Complete(NewEstimate("8"), completedAt)
+
+	if err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+
+	if session.State() != SessionStateCompleted {
+		t.Fatalf("State() = %q, want COMPLETED", session.State())
+	}
+
+	finalEstimate, ok := session.FinalEstimate()
+
+	if !ok {
+		t.Fatal("FinalEstimate() ok = false, want true")
+	}
+
+	if finalEstimate.String() != "8" {
+		t.Fatalf("FinalEstimate() = %q, want 8", finalEstimate)
+	}
+
+	if !session.CompletedAt().Equal(completedAt) {
+		t.Fatalf("CompletedAt() = %s, want %s", session.CompletedAt(), completedAt)
+	}
+}
+
+func TestSessionCompleteAcceptsSpecialEstimate(t *testing.T) {
+	session := revealedSession(t, 1)
+
+	err := session.Complete(
+		NewEstimate(SpecialEstimateUnknown),
+		time.Date(2026, 8, 12, 12, 30, 0, 0, time.UTC),
+	)
+
+	if err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+
+	finalEstimate, ok := session.FinalEstimate()
+
+	if !ok {
+		t.Fatal("FinalEstimate() ok = false, want true")
+	}
+
+	if finalEstimate.String() != SpecialEstimateUnknown {
+		t.Fatalf("FinalEstimate() = %q, want %q", finalEstimate, SpecialEstimateUnknown)
+	}
+}
+
+func TestSessionCompleteRejectsInvalidState(t *testing.T) {
+	session := votingSession(t, 1)
+
+	err := session.Complete(
+		NewEstimate("5"),
+		time.Date(2026, 8, 12, 12, 30, 0, 0, time.UTC),
+	)
+
+	if !errors.Is(err, ErrCompleteNotAllowed) {
+		t.Fatalf("Complete() error = %v, want ErrCompleteNotAllowed", err)
+	}
+}
+
+func TestSessionCompleteRejectsInvalidEstimate(t *testing.T) {
+	session := revealedSession(t, 1)
+
+	err := session.Complete(
+		NewEstimate("100"),
+		time.Date(2026, 8, 12, 12, 30, 0, 0, time.UTC),
+	)
+
+	if !errors.Is(err, ErrInvalidEstimate) {
+		t.Fatalf("Complete() error = %v, want ErrInvalidEstimate", err)
+	}
+}
+
+func TestSessionCompleteRejectsMissingCompletedAt(t *testing.T) {
+	session := revealedSession(t, 1)
+
+	err := session.Complete(NewEstimate("5"), time.Time{})
+
+	if !errors.Is(err, ErrCompleteNotAllowed) {
+		t.Fatalf("Complete() error = %v, want ErrCompleteNotAllowed", err)
+	}
+}
+
+func TestSessionCompletePreventsFurtherMutations(t *testing.T) {
+	session := revealedSession(t, 1)
+
+	err := session.Complete(
+		NewEstimate("5"),
+		time.Date(2026, 8, 12, 12, 30, 0, 0, time.UTC),
+	)
+
+	if err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+
+	err = session.JoinParticipant(
+		DiscordUserID("user-2"),
+		"User 2",
+		time.Date(2026, 8, 12, 12, 31, 0, 0, time.UTC),
+	)
+
+	if !errors.Is(err, ErrSessionNotOpen) {
+		t.Fatalf("JoinParticipant() error = %v, want ErrSessionNotOpen", err)
+	}
+
+	err = session.LeaveParticipant(
+		DiscordUserID("user-1"),
+		time.Date(2026, 8, 12, 12, 31, 0, 0, time.UTC),
+	)
+
+	if !errors.Is(err, ErrSessionNotOpen) {
+		t.Fatalf("LeaveParticipant() error = %v, want ErrSessionNotOpen", err)
+	}
+
+	err = session.CastVote(
+		DiscordUserID("user-1"),
+		NewEstimate("8"),
+		time.Date(2026, 8, 12, 12, 31, 0, 0, time.UTC),
+	)
+
+	if !errors.Is(err, ErrVoteNotAllowed) {
+		t.Fatalf("CastVote() error = %v, want ErrVoteNotAllowed", err)
+	}
+
+	_, err = session.RevealRound(time.Date(2026, 8, 12, 12, 31, 0, 0, time.UTC))
+
+	if !errors.Is(err, ErrRevealNotAllowed) {
+		t.Fatalf("RevealRound() error = %v, want ErrRevealNotAllowed", err)
+	}
+
+	err = session.RestartRound(
+		RoundID("round-2"),
+		time.Date(2026, 8, 12, 12, 31, 0, 0, time.UTC),
+	)
+
+	if !errors.Is(err, ErrRestartRoundNotAllowed) {
+		t.Fatalf("RestartRound() error = %v, want ErrRestartRoundNotAllowed", err)
 	}
 }
 
