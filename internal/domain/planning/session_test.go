@@ -1034,6 +1034,212 @@ func TestSessionRevealRoundFreezesVotes(t *testing.T) {
 	}
 }
 
+func TestSessionRestartRoundClosesPreviousRoundAndOpensNext(t *testing.T) {
+	session := revealedSession(t, 2)
+	openedAt := time.Date(2026, 8, 12, 12, 20, 0, 0, time.UTC)
+
+	err := session.RestartRound(RoundID("round-2"), openedAt)
+
+	if err != nil {
+		t.Fatalf("RestartRound() error = %v", err)
+	}
+
+	if session.State() != SessionStateVoting {
+		t.Fatalf("State() = %q, want VOTING", session.State())
+	}
+
+	if session.CurrentRoundNumber() != 2 {
+		t.Fatalf("CurrentRoundNumber() = %d, want 2", session.CurrentRoundNumber())
+	}
+
+	round, ok := session.CurrentRound()
+
+	if !ok {
+		t.Fatal("CurrentRound() ok = false, want true")
+	}
+
+	if round.ID() != RoundID("round-2") {
+		t.Fatalf("round ID() = %q, want round-2", round.ID())
+	}
+
+	if round.Number() != 2 {
+		t.Fatalf("round Number() = %d, want 2", round.Number())
+	}
+
+	if round.State() != RoundStateOpen {
+		t.Fatalf("round State() = %q, want OPEN", round.State())
+	}
+
+	if !round.OpenedAt().Equal(openedAt) {
+		t.Fatalf("round OpenedAt() = %s, want %s", round.OpenedAt(), openedAt)
+	}
+
+	if round.VoteCount() != 0 {
+		t.Fatalf("round VoteCount() = %d, want 0", round.VoteCount())
+	}
+
+	rounds := session.Rounds()
+
+	if len(rounds) != 2 {
+		t.Fatalf("Rounds() length = %d, want 2", len(rounds))
+	}
+
+	previousRound := rounds[0]
+
+	if previousRound.ID() != RoundID("round-1") {
+		t.Fatalf("previous round ID() = %q, want round-1", previousRound.ID())
+	}
+
+	if previousRound.State() != RoundStateClosed {
+		t.Fatalf("previous round State() = %q, want CLOSED", previousRound.State())
+	}
+
+	if !previousRound.ClosedAt().Equal(openedAt) {
+		t.Fatalf("previous round ClosedAt() = %s, want %s", previousRound.ClosedAt(), openedAt)
+	}
+
+	statistics, ok := previousRound.NumericStatistics()
+
+	if !ok {
+		t.Fatal("previous round NumericStatistics() ok = false, want true")
+	}
+
+	if !statistics.HasNumericResult {
+		t.Fatal("previous round statistics HasNumericResult = false, want true")
+	}
+
+	if len(session.ActiveParticipants()) != 2 {
+		t.Fatalf("ActiveParticipants() length = %d, want 2", len(session.ActiveParticipants()))
+	}
+}
+
+func TestSessionRestartRoundAllowsVotingInNewRound(t *testing.T) {
+	session := revealedSession(t, 1)
+
+	err := session.RestartRound(
+		RoundID("round-2"),
+		time.Date(2026, 8, 12, 12, 20, 0, 0, time.UTC),
+	)
+
+	if err != nil {
+		t.Fatalf("RestartRound() error = %v", err)
+	}
+
+	err = session.CastVote(
+		DiscordUserID("user-1"),
+		NewEstimate("8"),
+		time.Date(2026, 8, 12, 12, 21, 0, 0, time.UTC),
+	)
+
+	if err != nil {
+		t.Fatalf("CastVote() error = %v", err)
+	}
+
+	if session.State() != SessionStateReadyToReveal {
+		t.Fatalf("State() = %q, want READY_TO_REVEAL", session.State())
+	}
+
+	round, ok := session.CurrentRound()
+
+	if !ok {
+		t.Fatal("CurrentRound() ok = false, want true")
+	}
+
+	if !round.HasVoteFrom(DiscordUserID("user-1")) {
+		t.Fatal("round HasVoteFrom(user-1) = false, want true")
+	}
+}
+
+func TestSessionRestartRoundReturnsRoundsCopy(t *testing.T) {
+	session := revealedSession(t, 1)
+
+	err := session.RestartRound(
+		RoundID("round-2"),
+		time.Date(2026, 8, 12, 12, 20, 0, 0, time.UTC),
+	)
+
+	if err != nil {
+		t.Fatalf("RestartRound() error = %v", err)
+	}
+
+	rounds := session.Rounds()
+	rounds[0] = Round{id: RoundID("changed")}
+
+	if session.Rounds()[0].ID() != RoundID("round-1") {
+		t.Fatal("Rounds() leaked mutable slice")
+	}
+}
+
+func TestSessionRestartRoundRejectsNotRevealedSession(t *testing.T) {
+	session := votingSession(t, 1)
+
+	err := session.RestartRound(
+		RoundID("round-2"),
+		time.Date(2026, 8, 12, 12, 20, 0, 0, time.UTC),
+	)
+
+	if !errors.Is(err, ErrRestartRoundNotAllowed) {
+		t.Fatalf("RestartRound() error = %v, want ErrRestartRoundNotAllowed", err)
+	}
+}
+
+func TestSessionRestartRoundRejectsMissingCurrentRound(t *testing.T) {
+	session := validSession(t)
+	session.state = SessionStateRevealed
+
+	err := session.RestartRound(
+		RoundID("round-2"),
+		time.Date(2026, 8, 12, 12, 20, 0, 0, time.UTC),
+	)
+
+	if !errors.Is(err, ErrInvalidRound) {
+		t.Fatalf("RestartRound() error = %v, want ErrInvalidRound", err)
+	}
+}
+
+func TestSessionRestartRoundRejectsCurrentRoundNotRevealed(t *testing.T) {
+	session := revealedSession(t, 1)
+	session.currentRound.state = RoundStateOpen
+
+	err := session.RestartRound(
+		RoundID("round-2"),
+		time.Date(2026, 8, 12, 12, 20, 0, 0, time.UTC),
+	)
+
+	if !errors.Is(err, ErrRestartRoundNotAllowed) {
+		t.Fatalf("RestartRound() error = %v, want ErrRestartRoundNotAllowed", err)
+	}
+}
+
+func TestSessionRestartRoundRejectsInvalidInput(t *testing.T) {
+	tests := []struct {
+		name     string
+		roundID  RoundID
+		openedAt time.Time
+	}{
+		{
+			name:     "missing round id",
+			openedAt: time.Date(2026, 8, 12, 12, 20, 0, 0, time.UTC),
+		},
+		{
+			name:    "missing opened at",
+			roundID: RoundID("round-2"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			session := revealedSession(t, 1)
+
+			err := session.RestartRound(tt.roundID, tt.openedAt)
+
+			if !errors.Is(err, ErrInvalidRound) {
+				t.Fatalf("RestartRound() error = %v, want ErrInvalidRound", err)
+			}
+		})
+	}
+}
+
 func validNewSessionInput() NewSessionInput {
 	createdAt := time.Date(2026, 8, 12, 10, 0, 0, 0, time.UTC)
 
@@ -1125,6 +1331,27 @@ func votingSession(t *testing.T, participantCount int) Session {
 
 	if err != nil {
 		t.Fatalf("CloseParticipants() error = %v", err)
+	}
+
+	return session
+}
+
+func revealedSession(t *testing.T, participantCount int) Session {
+	t.Helper()
+
+	session := votingSession(t, participantCount)
+	baseTime := time.Date(2026, 8, 12, 12, 10, 0, 0, time.UTC)
+
+	for index := range participantCount {
+		discordUserID := DiscordUserID("user-" + string(rune('1'+index)))
+
+		castVote(t, &session, discordUserID, "5", baseTime.Add(time.Duration(index)*time.Minute))
+	}
+
+	_, err := session.RevealRound(baseTime.Add(5 * time.Minute))
+
+	if err != nil {
+		t.Fatalf("RevealRound() error = %v", err)
 	}
 
 	return session

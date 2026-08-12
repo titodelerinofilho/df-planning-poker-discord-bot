@@ -27,13 +27,18 @@ type Round struct {
 	hasNumericStatistics bool
 	openedAt             time.Time
 	revealedAt           time.Time
+	closedAt             time.Time
 }
 
 func newFirstRound(id RoundID, sessionID SessionID, openedAt time.Time) Round {
+	return newRound(id, sessionID, 1, openedAt)
+}
+
+func newRound(id RoundID, sessionID SessionID, number int, openedAt time.Time) Round {
 	return Round{
 		id:        id,
 		sessionID: sessionID,
-		number:    1,
+		number:    number,
 		state:     RoundStateOpen,
 		votes:     make(map[DiscordUserID]Vote),
 		openedAt:  openedAt,
@@ -92,6 +97,10 @@ func (round Round) RevealedAt() time.Time {
 	return round.revealedAt
 }
 
+func (round Round) ClosedAt() time.Time {
+	return round.closedAt
+}
+
 func (round *Round) castVote(discordUserID DiscordUserID, estimate Estimate, castAt time.Time) {
 	existing, exists := round.votes[discordUserID]
 
@@ -117,4 +126,9 @@ func (round *Round) reveal(statistics NumericStatistics, revealedAt time.Time) {
 	round.numericStatistics = statistics
 	round.hasNumericStatistics = true
 	round.revealedAt = revealedAt
+}
+
+func (round *Round) close(closedAt time.Time) {
+	round.state = RoundStateClosed
+	round.closedAt = closedAt
 }
