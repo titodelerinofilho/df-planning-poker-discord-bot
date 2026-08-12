@@ -14,6 +14,8 @@ var ErrSessionNotOpen = errors.New("planning session is not open")
 var ErrParticipantNotFound = errors.New("participant not found")
 var ErrAlreadyParticipant = errors.New("user already participates")
 var ErrInvalidParticipant = errors.New("invalid participant")
+var ErrNotEnoughParticipants = errors.New("not enough participants")
+var ErrInvalidRound = errors.New("invalid round")
 
 type SessionState string
 
@@ -74,6 +76,8 @@ type Session struct {
 	facilitatorID      DiscordUserID
 	scale              Scale
 	participants       map[DiscordUserID]Participant
+	currentRound       Round
+	hasCurrentRound    bool
 	state              SessionState
 	currentRoundNumber int
 	createdAt          time.Time
@@ -170,6 +174,10 @@ func (session Session) ActiveParticipants() []Participant {
 	return participants
 }
 
+func (session Session) CurrentRound() (Round, bool) {
+	return session.currentRound, session.hasCurrentRound
+}
+
 func (session Session) State() SessionState {
 	return session.state
 }
@@ -230,6 +238,42 @@ func (session *Session) LeaveParticipant(discordUserID DiscordUserID, leftAt tim
 	participant.active = false
 	participant.leftAt = leftAt
 	session.participants[discordUserID] = participant
+
+	return nil
+}
+
+func (session *Session) CloseParticipants(minimumParticipants int, roundID RoundID, openedAt time.Time) error {
+	if session.state != SessionStateJoining {
+		return fmt.Errorf("%w: participants can only close while session is joining", ErrSessionNotOpen)
+	}
+
+	if minimumParticipants < 1 {
+		return fmt.Errorf("%w: minimum participants must be positive", ErrInvalidParticipant)
+	}
+
+	if roundID == "" {
+		return fmt.Errorf("%w: round id is required", ErrInvalidRound)
+	}
+
+	if openedAt.IsZero() {
+		return fmt.Errorf("%w: opened at is required", ErrInvalidRound)
+	}
+
+	activeParticipants := session.ActiveParticipants()
+
+	if len(activeParticipants) < minimumParticipants {
+		return fmt.Errorf(
+			"%w: got %d active participants, want at least %d",
+			ErrNotEnoughParticipants,
+			len(activeParticipants),
+			minimumParticipants,
+		)
+	}
+
+	session.currentRound = newFirstRound(roundID, session.id, openedAt)
+	session.hasCurrentRound = true
+	session.currentRoundNumber = session.currentRound.number
+	session.state = SessionStateVoting
 
 	return nil
 }

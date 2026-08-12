@@ -107,6 +107,8 @@ Sessões de Planning Poker nascem no estado `JOINING`, vinculadas a guild, canal
 
 Enquanto a sessão está em `JOINING`, participantes podem entrar e sair. O domínio impede duplicidade de participantes ativos e bloqueia mudanças na lista depois que a sessão sai desse estado.
 
+Ao fechar a lista de participantes, a sessão exige a quantidade mínima configurada de participantes ativos, muda para `VOTING` e cria a primeira rodada em estado `OPEN`.
+
 ## Encerramento
 
 O processo trata `SIGINT` e `SIGTERM`, cancela o contexto raiz e executa o fechamento de recursos respeitando `SHUTDOWN_TIMEOUT`.
