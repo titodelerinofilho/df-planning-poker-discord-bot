@@ -17,6 +17,7 @@ var ErrInvalidParticipant = errors.New("invalid participant")
 var ErrNotEnoughParticipants = errors.New("not enough participants")
 var ErrInvalidRound = errors.New("invalid round")
 var ErrVoteNotAllowed = errors.New("vote is not allowed")
+var ErrRevealNotAllowed = errors.New("reveal is not allowed")
 
 type SessionState string
 
@@ -321,6 +322,48 @@ func (session *Session) CastVote(discordUserID DiscordUserID, estimate Estimate,
 	session.state = SessionStateVoting
 
 	return nil
+}
+
+func (session *Session) RevealRound(revealedAt time.Time) (RoundRevealResult, error) {
+	if session.state != SessionStateReadyToReveal {
+		return RoundRevealResult{}, fmt.Errorf("%w: session is not ready to reveal", ErrRevealNotAllowed)
+	}
+
+	if !session.hasCurrentRound {
+		return RoundRevealResult{}, fmt.Errorf("%w: current round is required", ErrInvalidRound)
+	}
+
+	if session.currentRound.state != RoundStateReady {
+		return RoundRevealResult{}, fmt.Errorf("%w: round is not ready to reveal", ErrRevealNotAllowed)
+	}
+
+	if revealedAt.IsZero() {
+		return RoundRevealResult{}, fmt.Errorf("%w: revealed at is required", ErrRevealNotAllowed)
+	}
+
+	revealedVotes := revealedVotesByParticipantOrder(session.ActiveParticipants(), session.currentRound.votes)
+	estimates := make([]Estimate, 0, len(revealedVotes))
+
+	for _, vote := range revealedVotes {
+		estimates = append(estimates, vote.estimate)
+	}
+
+	statistics, err := CalculateNumericStatistics(session.scale, estimates)
+
+	if err != nil {
+		return RoundRevealResult{}, fmt.Errorf("calculate revealed round statistics: %w", err)
+	}
+
+	session.currentRound.reveal(statistics, revealedAt)
+	session.state = SessionStateRevealed
+
+	return newRoundRevealResult(
+		session.currentRound.id,
+		session.currentRound.number,
+		revealedVotes,
+		statistics,
+		revealedAt,
+	), nil
 }
 
 func validateNewSessionInput(input NewSessionInput) error {

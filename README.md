@@ -111,6 +111,8 @@ Ao fechar a lista de participantes, a sessão exige a quantidade mínima configu
 
 Durante `VOTING`, somente participantes ativos podem votar usando valores da escala da sessão. O participante pode alterar o voto antes da revelação, e quando todos os participantes ativos votam a sessão muda para `READY_TO_REVEAL`.
 
+Ao revelar uma rodada pronta, a sessão muda para `REVEALED`, a rodada congela novos votos e o domínio retorna votos revelados com estatísticas numéricas calculadas a partir da escala.
+
 ## Encerramento
 
 O processo trata `SIGINT` e `SIGTERM`, cancela o contexto raiz e executa o fechamento de recursos respeitando `SHUTDOWN_TIMEOUT`.
