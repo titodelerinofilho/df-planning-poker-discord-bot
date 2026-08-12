@@ -844,6 +844,196 @@ func TestSessionCastVoteRejectsMissingCastAt(t *testing.T) {
 	}
 }
 
+func TestSessionRevealRoundReturnsStructuredResult(t *testing.T) {
+	session := votingSession(t, 3)
+	baseTime := time.Date(2026, 8, 12, 12, 10, 0, 0, time.UTC)
+	revealedAt := baseTime.Add(5 * time.Minute)
+
+	castVote(t, &session, DiscordUserID("user-1"), "5", baseTime)
+	castVote(t, &session, DiscordUserID("user-2"), "8", baseTime.Add(time.Minute))
+	castVote(t, &session, DiscordUserID("user-3"), SpecialEstimateUnknown, baseTime.Add(2*time.Minute))
+
+	result, err := session.RevealRound(revealedAt)
+
+	if err != nil {
+		t.Fatalf("RevealRound() error = %v", err)
+	}
+
+	if session.State() != SessionStateRevealed {
+		t.Fatalf("State() = %q, want REVEALED", session.State())
+	}
+
+	round, ok := session.CurrentRound()
+
+	if !ok {
+		t.Fatal("CurrentRound() ok = false, want true")
+	}
+
+	if round.State() != RoundStateRevealed {
+		t.Fatalf("round State() = %q, want REVEALED", round.State())
+	}
+
+	if !round.RevealedAt().Equal(revealedAt) {
+		t.Fatalf("round RevealedAt() = %s, want %s", round.RevealedAt(), revealedAt)
+	}
+
+	roundStatistics, ok := round.NumericStatistics()
+
+	if !ok {
+		t.Fatal("round NumericStatistics() ok = false, want true")
+	}
+
+	if !roundStatistics.HasNumericResult {
+		t.Fatal("round statistics HasNumericResult = false, want true")
+	}
+
+	if result.RoundID() != round.ID() {
+		t.Fatalf("result RoundID() = %q, want %q", result.RoundID(), round.ID())
+	}
+
+	if result.RoundNumber() != round.Number() {
+		t.Fatalf("result RoundNumber() = %d, want %d", result.RoundNumber(), round.Number())
+	}
+
+	if !result.RevealedAt().Equal(revealedAt) {
+		t.Fatalf("result RevealedAt() = %s, want %s", result.RevealedAt(), revealedAt)
+	}
+
+	votes := result.Votes()
+
+	if len(votes) != 3 {
+		t.Fatalf("result Votes() length = %d, want 3", len(votes))
+	}
+
+	assertRevealedVote(t, votes[0], DiscordUserID("user-1"), "User 1", "5")
+	assertRevealedVote(t, votes[1], DiscordUserID("user-2"), "User 2", "8")
+	assertRevealedVote(t, votes[2], DiscordUserID("user-3"), "User 3", SpecialEstimateUnknown)
+
+	statistics := result.NumericStatistics()
+
+	if !statistics.HasNumericResult {
+		t.Fatal("result statistics HasNumericResult = false, want true")
+	}
+
+	if statistics.Min != 5 {
+		t.Fatalf("result statistics Min = %d, want 5", statistics.Min)
+	}
+
+	if statistics.Max != 8 {
+		t.Fatalf("result statistics Max = %d, want 8", statistics.Max)
+	}
+
+	if statistics.Median != 6.5 {
+		t.Fatalf("result statistics Median = %f, want 6.5", statistics.Median)
+	}
+
+	if !slices.Equal(statistics.Mode, []int{5, 8}) {
+		t.Fatalf("result statistics Mode = %#v, want [5 8]", statistics.Mode)
+	}
+}
+
+func TestSessionRevealRoundReturnsVotesCopy(t *testing.T) {
+	session := votingSession(t, 1)
+	castVote(t, &session, DiscordUserID("user-1"), "5", time.Date(2026, 8, 12, 12, 10, 0, 0, time.UTC))
+
+	result, err := session.RevealRound(time.Date(2026, 8, 12, 12, 15, 0, 0, time.UTC))
+
+	if err != nil {
+		t.Fatalf("RevealRound() error = %v", err)
+	}
+
+	votes := result.Votes()
+	votes[0] = RevealedVote{discordUserID: DiscordUserID("changed")}
+
+	if result.Votes()[0].DiscordUserID() != DiscordUserID("user-1") {
+		t.Fatalf("result Votes() leaked mutable slice")
+	}
+}
+
+func TestSessionRevealRoundHandlesNoNumericResult(t *testing.T) {
+	session := votingSession(t, 2)
+	baseTime := time.Date(2026, 8, 12, 12, 10, 0, 0, time.UTC)
+
+	castVote(t, &session, DiscordUserID("user-1"), SpecialEstimateUnknown, baseTime)
+	castVote(t, &session, DiscordUserID("user-2"), SpecialEstimateCoffee, baseTime.Add(time.Minute))
+
+	result, err := session.RevealRound(baseTime.Add(5 * time.Minute))
+
+	if err != nil {
+		t.Fatalf("RevealRound() error = %v", err)
+	}
+
+	if result.NumericStatistics().HasNumericResult {
+		t.Fatal("result statistics HasNumericResult = true, want false")
+	}
+}
+
+func TestSessionRevealRoundRejectsNotReadySession(t *testing.T) {
+	session := votingSession(t, 2)
+	castVote(t, &session, DiscordUserID("user-1"), "5", time.Date(2026, 8, 12, 12, 10, 0, 0, time.UTC))
+
+	_, err := session.RevealRound(time.Date(2026, 8, 12, 12, 15, 0, 0, time.UTC))
+
+	if !errors.Is(err, ErrRevealNotAllowed) {
+		t.Fatalf("RevealRound() error = %v, want ErrRevealNotAllowed", err)
+	}
+
+	if session.State() != SessionStateVoting {
+		t.Fatalf("State() = %q, want VOTING", session.State())
+	}
+}
+
+func TestSessionRevealRoundRejectsMissingCurrentRound(t *testing.T) {
+	session := validSession(t)
+	session.state = SessionStateReadyToReveal
+
+	_, err := session.RevealRound(time.Date(2026, 8, 12, 12, 15, 0, 0, time.UTC))
+
+	if !errors.Is(err, ErrInvalidRound) {
+		t.Fatalf("RevealRound() error = %v, want ErrInvalidRound", err)
+	}
+}
+
+func TestSessionRevealRoundRejectsRoundNotReady(t *testing.T) {
+	session := votingSession(t, 1)
+	castVote(t, &session, DiscordUserID("user-1"), "5", time.Date(2026, 8, 12, 12, 10, 0, 0, time.UTC))
+	session.currentRound.state = RoundStateOpen
+
+	_, err := session.RevealRound(time.Date(2026, 8, 12, 12, 15, 0, 0, time.UTC))
+
+	if !errors.Is(err, ErrRevealNotAllowed) {
+		t.Fatalf("RevealRound() error = %v, want ErrRevealNotAllowed", err)
+	}
+}
+
+func TestSessionRevealRoundRejectsMissingRevealedAt(t *testing.T) {
+	session := votingSession(t, 1)
+	castVote(t, &session, DiscordUserID("user-1"), "5", time.Date(2026, 8, 12, 12, 10, 0, 0, time.UTC))
+
+	_, err := session.RevealRound(time.Time{})
+
+	if !errors.Is(err, ErrRevealNotAllowed) {
+		t.Fatalf("RevealRound() error = %v, want ErrRevealNotAllowed", err)
+	}
+}
+
+func TestSessionRevealRoundFreezesVotes(t *testing.T) {
+	session := votingSession(t, 1)
+	castVote(t, &session, DiscordUserID("user-1"), "5", time.Date(2026, 8, 12, 12, 10, 0, 0, time.UTC))
+
+	_, err := session.RevealRound(time.Date(2026, 8, 12, 12, 15, 0, 0, time.UTC))
+
+	if err != nil {
+		t.Fatalf("RevealRound() error = %v", err)
+	}
+
+	err = session.CastVote(DiscordUserID("user-1"), NewEstimate("8"), time.Date(2026, 8, 12, 12, 16, 0, 0, time.UTC))
+
+	if !errors.Is(err, ErrVoteNotAllowed) {
+		t.Fatalf("CastVote() error = %v, want ErrVoteNotAllowed", err)
+	}
+}
+
 func validNewSessionInput() NewSessionInput {
 	createdAt := time.Date(2026, 8, 12, 10, 0, 0, 0, time.UTC)
 
@@ -884,6 +1074,38 @@ func joinParticipant(t *testing.T, session *Session, discordUserID DiscordUserID
 	}
 }
 
+func castVote(t *testing.T, session *Session, discordUserID DiscordUserID, estimate string, castAt time.Time) {
+	t.Helper()
+
+	err := session.CastVote(discordUserID, NewEstimate(estimate), castAt)
+
+	if err != nil {
+		t.Fatalf("CastVote() error = %v", err)
+	}
+}
+
+func assertRevealedVote(
+	t *testing.T,
+	vote RevealedVote,
+	discordUserID DiscordUserID,
+	displayName string,
+	estimate string,
+) {
+	t.Helper()
+
+	if vote.DiscordUserID() != discordUserID {
+		t.Fatalf("vote DiscordUserID() = %q, want %q", vote.DiscordUserID(), discordUserID)
+	}
+
+	if vote.DisplayName() != displayName {
+		t.Fatalf("vote DisplayName() = %q, want %q", vote.DisplayName(), displayName)
+	}
+
+	if vote.Estimate().String() != estimate {
+		t.Fatalf("vote Estimate() = %q, want %q", vote.Estimate(), estimate)
+	}
+}
+
 func votingSession(t *testing.T, participantCount int) Session {
 	t.Helper()
 
@@ -894,7 +1116,9 @@ func votingSession(t *testing.T, participantCount int) Session {
 		discordUserID := DiscordUserID("user-" + string(rune('1'+index)))
 		displayName := "User " + string(rune('1'+index))
 
-		joinParticipant(t, &session, discordUserID, displayName, openedAt.Add(-time.Duration(index+1)*time.Minute))
+		joinedAt := openedAt.Add(-time.Duration(participantCount-index) * time.Minute)
+
+		joinParticipant(t, &session, discordUserID, displayName, joinedAt)
 	}
 
 	err := session.CloseParticipants(participantCount, RoundID("round-1"), openedAt)
