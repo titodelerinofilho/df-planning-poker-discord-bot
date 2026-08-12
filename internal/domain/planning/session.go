@@ -20,6 +20,8 @@ var ErrVoteNotAllowed = errors.New("vote is not allowed")
 var ErrRevealNotAllowed = errors.New("reveal is not allowed")
 var ErrRestartRoundNotAllowed = errors.New("restart round is not allowed")
 var ErrCompleteNotAllowed = errors.New("complete session is not allowed")
+var ErrCancelNotAllowed = errors.New("cancel session is not allowed")
+var ErrExpireNotAllowed = errors.New("expire session is not allowed")
 
 type SessionState string
 
@@ -87,8 +89,13 @@ type Session struct {
 	currentRoundNumber int
 	finalEstimate      Estimate
 	hasFinalEstimate   bool
+	cancelReason       string
+	cancelledBy        DiscordUserID
+	expireReason       string
 	createdAt          time.Time
 	completedAt        time.Time
+	cancelledAt        time.Time
+	expiredAt          time.Time
 	expiresAt          time.Time
 }
 
@@ -215,6 +222,26 @@ func (session Session) CreatedAt() time.Time {
 
 func (session Session) CompletedAt() time.Time {
 	return session.completedAt
+}
+
+func (session Session) CancelReason() string {
+	return session.cancelReason
+}
+
+func (session Session) CancelledBy() DiscordUserID {
+	return session.cancelledBy
+}
+
+func (session Session) CancelledAt() time.Time {
+	return session.cancelledAt
+}
+
+func (session Session) ExpireReason() string {
+	return session.expireReason
+}
+
+func (session Session) ExpiredAt() time.Time {
+	return session.expiredAt
 }
 
 func (session Session) ExpiresAt() time.Time {
@@ -444,6 +471,55 @@ func (session *Session) Complete(finalEstimate Estimate, completedAt time.Time) 
 	return nil
 }
 
+func (session *Session) Cancel(actorID DiscordUserID, reason string, cancelledAt time.Time) error {
+	if session.isTerminal() {
+		return fmt.Errorf("%w: session is already terminal", ErrCancelNotAllowed)
+	}
+
+	reason = strings.TrimSpace(reason)
+
+	if actorID == "" {
+		return fmt.Errorf("%w: actor id is required", ErrCancelNotAllowed)
+	}
+
+	if reason == "" {
+		return fmt.Errorf("%w: reason is required", ErrCancelNotAllowed)
+	}
+
+	if cancelledAt.IsZero() {
+		return fmt.Errorf("%w: cancelled at is required", ErrCancelNotAllowed)
+	}
+
+	session.cancelledBy = actorID
+	session.cancelReason = reason
+	session.cancelledAt = cancelledAt
+	session.state = SessionStateCancelled
+
+	return nil
+}
+
+func (session *Session) Expire(reason string, expiredAt time.Time) error {
+	if session.isTerminal() {
+		return fmt.Errorf("%w: session is already terminal", ErrExpireNotAllowed)
+	}
+
+	reason = strings.TrimSpace(reason)
+
+	if reason == "" {
+		return fmt.Errorf("%w: reason is required", ErrExpireNotAllowed)
+	}
+
+	if expiredAt.IsZero() {
+		return fmt.Errorf("%w: expired at is required", ErrExpireNotAllowed)
+	}
+
+	session.expireReason = reason
+	session.expiredAt = expiredAt
+	session.state = SessionStateExpired
+
+	return nil
+}
+
 func validateNewSessionInput(input NewSessionInput) error {
 	if input.ID == "" {
 		return fmt.Errorf("%w: id is required", ErrInvalidSession)
@@ -568,4 +644,10 @@ func compareParticipantsByJoinTime(left Participant, right Participant) int {
 	}
 
 	return strings.Compare(string(left.discordUserID), string(right.discordUserID))
+}
+
+func (session Session) isTerminal() bool {
+	return session.state == SessionStateCompleted ||
+		session.state == SessionStateCancelled ||
+		session.state == SessionStateExpired
 }

@@ -72,6 +72,26 @@ func TestNewSessionCreatesJoiningSession(t *testing.T) {
 		t.Fatalf("CompletedAt() = %s, want zero time", session.CompletedAt())
 	}
 
+	if session.CancelReason() != "" {
+		t.Fatalf("CancelReason() = %q, want empty", session.CancelReason())
+	}
+
+	if session.CancelledBy() != "" {
+		t.Fatalf("CancelledBy() = %q, want empty", session.CancelledBy())
+	}
+
+	if !session.CancelledAt().IsZero() {
+		t.Fatalf("CancelledAt() = %s, want zero time", session.CancelledAt())
+	}
+
+	if session.ExpireReason() != "" {
+		t.Fatalf("ExpireReason() = %q, want empty", session.ExpireReason())
+	}
+
+	if !session.ExpiredAt().IsZero() {
+		t.Fatalf("ExpiredAt() = %s, want zero time", session.ExpiredAt())
+	}
+
 	if !session.ExpiresAt().Equal(input.ExpiresAt) {
 		t.Fatalf("ExpiresAt() = %s, want %s", session.ExpiresAt(), input.ExpiresAt)
 	}
@@ -1393,6 +1413,271 @@ func TestSessionCompletePreventsFurtherMutations(t *testing.T) {
 	}
 }
 
+func TestSessionCancelRecordsReasonActorAndInstant(t *testing.T) {
+	session := votingSession(t, 1)
+	cancelledAt := time.Date(2026, 8, 12, 12, 40, 0, 0, time.UTC)
+
+	err := session.Cancel(DiscordUserID("facilitator-123"), " alinhamento externo ", cancelledAt)
+
+	if err != nil {
+		t.Fatalf("Cancel() error = %v", err)
+	}
+
+	if session.State() != SessionStateCancelled {
+		t.Fatalf("State() = %q, want CANCELLED", session.State())
+	}
+
+	if session.CancelledBy() != DiscordUserID("facilitator-123") {
+		t.Fatalf("CancelledBy() = %q, want facilitator-123", session.CancelledBy())
+	}
+
+	if session.CancelReason() != "alinhamento externo" {
+		t.Fatalf("CancelReason() = %q, want alinhamento externo", session.CancelReason())
+	}
+
+	if !session.CancelledAt().Equal(cancelledAt) {
+		t.Fatalf("CancelledAt() = %s, want %s", session.CancelledAt(), cancelledAt)
+	}
+}
+
+func TestSessionCancelAllowsMutableStates(t *testing.T) {
+	tests := []struct {
+		name    string
+		session Session
+	}{
+		{name: "joining", session: validSession(t)},
+		{name: "voting", session: votingSession(t, 1)},
+		{name: "ready to reveal", session: readyToRevealSession(t, 1)},
+		{name: "revealed", session: revealedSession(t, 1)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			session := tt.session
+
+			err := session.Cancel(
+				DiscordUserID("facilitator-123"),
+				"cancelado",
+				time.Date(2026, 8, 12, 12, 40, 0, 0, time.UTC),
+			)
+
+			if err != nil {
+				t.Fatalf("Cancel() error = %v", err)
+			}
+
+			if session.State() != SessionStateCancelled {
+				t.Fatalf("State() = %q, want CANCELLED", session.State())
+			}
+		})
+	}
+}
+
+func TestSessionCancelRejectsInvalidInput(t *testing.T) {
+	tests := []struct {
+		name        string
+		actorID     DiscordUserID
+		reason      string
+		cancelledAt time.Time
+	}{
+		{
+			name:        "missing actor",
+			reason:      "cancelado",
+			cancelledAt: time.Date(2026, 8, 12, 12, 40, 0, 0, time.UTC),
+		},
+		{
+			name:        "missing reason",
+			actorID:     DiscordUserID("facilitator-123"),
+			reason:      " ",
+			cancelledAt: time.Date(2026, 8, 12, 12, 40, 0, 0, time.UTC),
+		},
+		{
+			name:    "missing cancelled at",
+			actorID: DiscordUserID("facilitator-123"),
+			reason:  "cancelado",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			session := votingSession(t, 1)
+
+			err := session.Cancel(tt.actorID, tt.reason, tt.cancelledAt)
+
+			if !errors.Is(err, ErrCancelNotAllowed) {
+				t.Fatalf("Cancel() error = %v, want ErrCancelNotAllowed", err)
+			}
+		})
+	}
+}
+
+func TestSessionCancelRejectsTerminalState(t *testing.T) {
+	tests := []struct {
+		name    string
+		session Session
+	}{
+		{name: "completed", session: completedSession(t)},
+		{name: "cancelled", session: cancelledSession(t)},
+		{name: "expired", session: expiredSession(t)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			session := tt.session
+
+			err := session.Cancel(
+				DiscordUserID("facilitator-123"),
+				"cancelado",
+				time.Date(2026, 8, 12, 12, 50, 0, 0, time.UTC),
+			)
+
+			if !errors.Is(err, ErrCancelNotAllowed) {
+				t.Fatalf("Cancel() error = %v, want ErrCancelNotAllowed", err)
+			}
+		})
+	}
+}
+
+func TestSessionCancelPreventsFurtherMutations(t *testing.T) {
+	session := votingSession(t, 1)
+
+	err := session.Cancel(
+		DiscordUserID("facilitator-123"),
+		"cancelado",
+		time.Date(2026, 8, 12, 12, 40, 0, 0, time.UTC),
+	)
+
+	if err != nil {
+		t.Fatalf("Cancel() error = %v", err)
+	}
+
+	assertTerminalSessionRejectsMutations(t, &session)
+}
+
+func TestSessionExpireRecordsReasonAndInstant(t *testing.T) {
+	session := votingSession(t, 1)
+	expiredAt := time.Date(2026, 8, 12, 12, 40, 0, 0, time.UTC)
+
+	err := session.Expire(" tempo esgotado ", expiredAt)
+
+	if err != nil {
+		t.Fatalf("Expire() error = %v", err)
+	}
+
+	if session.State() != SessionStateExpired {
+		t.Fatalf("State() = %q, want EXPIRED", session.State())
+	}
+
+	if session.ExpireReason() != "tempo esgotado" {
+		t.Fatalf("ExpireReason() = %q, want tempo esgotado", session.ExpireReason())
+	}
+
+	if !session.ExpiredAt().Equal(expiredAt) {
+		t.Fatalf("ExpiredAt() = %s, want %s", session.ExpiredAt(), expiredAt)
+	}
+}
+
+func TestSessionExpireAllowsMutableStates(t *testing.T) {
+	tests := []struct {
+		name    string
+		session Session
+	}{
+		{name: "joining", session: validSession(t)},
+		{name: "voting", session: votingSession(t, 1)},
+		{name: "ready to reveal", session: readyToRevealSession(t, 1)},
+		{name: "revealed", session: revealedSession(t, 1)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			session := tt.session
+
+			err := session.Expire(
+				"tempo esgotado",
+				time.Date(2026, 8, 12, 12, 40, 0, 0, time.UTC),
+			)
+
+			if err != nil {
+				t.Fatalf("Expire() error = %v", err)
+			}
+
+			if session.State() != SessionStateExpired {
+				t.Fatalf("State() = %q, want EXPIRED", session.State())
+			}
+		})
+	}
+}
+
+func TestSessionExpireRejectsInvalidInput(t *testing.T) {
+	tests := []struct {
+		name      string
+		reason    string
+		expiredAt time.Time
+	}{
+		{
+			name:      "missing reason",
+			reason:    " ",
+			expiredAt: time.Date(2026, 8, 12, 12, 40, 0, 0, time.UTC),
+		},
+		{
+			name:   "missing expired at",
+			reason: "tempo esgotado",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			session := votingSession(t, 1)
+
+			err := session.Expire(tt.reason, tt.expiredAt)
+
+			if !errors.Is(err, ErrExpireNotAllowed) {
+				t.Fatalf("Expire() error = %v, want ErrExpireNotAllowed", err)
+			}
+		})
+	}
+}
+
+func TestSessionExpireRejectsTerminalState(t *testing.T) {
+	tests := []struct {
+		name    string
+		session Session
+	}{
+		{name: "completed", session: completedSession(t)},
+		{name: "cancelled", session: cancelledSession(t)},
+		{name: "expired", session: expiredSession(t)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			session := tt.session
+
+			err := session.Expire(
+				"tempo esgotado",
+				time.Date(2026, 8, 12, 12, 50, 0, 0, time.UTC),
+			)
+
+			if !errors.Is(err, ErrExpireNotAllowed) {
+				t.Fatalf("Expire() error = %v, want ErrExpireNotAllowed", err)
+			}
+		})
+	}
+}
+
+func TestSessionExpirePreventsFurtherMutations(t *testing.T) {
+	session := votingSession(t, 1)
+
+	err := session.Expire(
+		"tempo esgotado",
+		time.Date(2026, 8, 12, 12, 40, 0, 0, time.UTC),
+	)
+
+	if err != nil {
+		t.Fatalf("Expire() error = %v", err)
+	}
+
+	assertTerminalSessionRejectsMutations(t, &session)
+}
+
 func validNewSessionInput() NewSessionInput {
 	createdAt := time.Date(2026, 8, 12, 10, 0, 0, 0, time.UTC)
 
@@ -1508,4 +1793,119 @@ func revealedSession(t *testing.T, participantCount int) Session {
 	}
 
 	return session
+}
+
+func readyToRevealSession(t *testing.T, participantCount int) Session {
+	t.Helper()
+
+	session := votingSession(t, participantCount)
+	baseTime := time.Date(2026, 8, 12, 12, 10, 0, 0, time.UTC)
+
+	for index := range participantCount {
+		discordUserID := DiscordUserID("user-" + string(rune('1'+index)))
+
+		castVote(t, &session, discordUserID, "5", baseTime.Add(time.Duration(index)*time.Minute))
+	}
+
+	return session
+}
+
+func completedSession(t *testing.T) Session {
+	t.Helper()
+
+	session := revealedSession(t, 1)
+
+	err := session.Complete(
+		NewEstimate("5"),
+		time.Date(2026, 8, 12, 12, 30, 0, 0, time.UTC),
+	)
+
+	if err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+
+	return session
+}
+
+func cancelledSession(t *testing.T) Session {
+	t.Helper()
+
+	session := votingSession(t, 1)
+
+	err := session.Cancel(
+		DiscordUserID("facilitator-123"),
+		"cancelado",
+		time.Date(2026, 8, 12, 12, 40, 0, 0, time.UTC),
+	)
+
+	if err != nil {
+		t.Fatalf("Cancel() error = %v", err)
+	}
+
+	return session
+}
+
+func expiredSession(t *testing.T) Session {
+	t.Helper()
+
+	session := votingSession(t, 1)
+
+	err := session.Expire(
+		"tempo esgotado",
+		time.Date(2026, 8, 12, 12, 40, 0, 0, time.UTC),
+	)
+
+	if err != nil {
+		t.Fatalf("Expire() error = %v", err)
+	}
+
+	return session
+}
+
+func assertTerminalSessionRejectsMutations(t *testing.T, session *Session) {
+	t.Helper()
+
+	err := session.JoinParticipant(
+		DiscordUserID("user-2"),
+		"User 2",
+		time.Date(2026, 8, 12, 12, 41, 0, 0, time.UTC),
+	)
+
+	if !errors.Is(err, ErrSessionNotOpen) {
+		t.Fatalf("JoinParticipant() error = %v, want ErrSessionNotOpen", err)
+	}
+
+	err = session.LeaveParticipant(
+		DiscordUserID("user-1"),
+		time.Date(2026, 8, 12, 12, 41, 0, 0, time.UTC),
+	)
+
+	if !errors.Is(err, ErrSessionNotOpen) {
+		t.Fatalf("LeaveParticipant() error = %v, want ErrSessionNotOpen", err)
+	}
+
+	err = session.CastVote(
+		DiscordUserID("user-1"),
+		NewEstimate("8"),
+		time.Date(2026, 8, 12, 12, 41, 0, 0, time.UTC),
+	)
+
+	if !errors.Is(err, ErrVoteNotAllowed) {
+		t.Fatalf("CastVote() error = %v, want ErrVoteNotAllowed", err)
+	}
+
+	_, err = session.RevealRound(time.Date(2026, 8, 12, 12, 41, 0, 0, time.UTC))
+
+	if !errors.Is(err, ErrRevealNotAllowed) {
+		t.Fatalf("RevealRound() error = %v, want ErrRevealNotAllowed", err)
+	}
+
+	err = session.RestartRound(
+		RoundID("round-2"),
+		time.Date(2026, 8, 12, 12, 41, 0, 0, time.UTC),
+	)
+
+	if !errors.Is(err, ErrRestartRoundNotAllowed) {
+		t.Fatalf("RestartRound() error = %v, want ErrRestartRoundNotAllowed", err)
+	}
 }
