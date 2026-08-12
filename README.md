@@ -103,6 +103,8 @@ A escala padrão de Planning Poker é Fibonacci modificada: `0, 1, 2, 3, 5, 8, 1
 
 As estatísticas numéricas calculam mínimo, máximo, mediana e moda usando somente estimativas numéricas. Rodadas com apenas valores especiais são representadas sem resultado numérico.
 
+Sessões de Planning Poker nascem no estado `JOINING`, vinculadas a guild, canal, thread, mensagem principal, tarefa, criador, facilitador, escala e expiração. Participantes e rodadas são adicionados nas próximas etapas da máquina de estados.
+
 ## Encerramento
 
 O processo trata `SIGINT` e `SIGTERM`, cancela o contexto raiz e executa o fechamento de recursos respeitando `SHUTDOWN_TIMEOUT`.
