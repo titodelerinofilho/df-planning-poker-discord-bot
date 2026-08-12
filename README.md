@@ -115,6 +115,8 @@ Ao revelar uma rodada pronta, a sessão muda para `REVEALED`, a rodada congela n
 
 Depois de uma revelação, a sessão pode iniciar uma nova rodada: a rodada anterior é fechada, os participantes ativos são mantidos e a nova rodada começa em `OPEN` sem votos ativos.
 
+Uma sessão revelada pode ser finalizada com uma estimativa válida da escala. Ao concluir, a sessão registra estimativa final, instante de conclusão e passa a bloquear novas mutações.
+
 ## Encerramento
 
 O processo trata `SIGINT` e `SIGTERM`, cancela o contexto raiz e executa o fechamento de recursos respeitando `SHUTDOWN_TIMEOUT`.

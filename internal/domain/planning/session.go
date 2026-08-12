@@ -19,6 +19,7 @@ var ErrInvalidRound = errors.New("invalid round")
 var ErrVoteNotAllowed = errors.New("vote is not allowed")
 var ErrRevealNotAllowed = errors.New("reveal is not allowed")
 var ErrRestartRoundNotAllowed = errors.New("restart round is not allowed")
+var ErrCompleteNotAllowed = errors.New("complete session is not allowed")
 
 type SessionState string
 
@@ -84,7 +85,10 @@ type Session struct {
 	hasCurrentRound    bool
 	state              SessionState
 	currentRoundNumber int
+	finalEstimate      Estimate
+	hasFinalEstimate   bool
 	createdAt          time.Time
+	completedAt        time.Time
 	expiresAt          time.Time
 }
 
@@ -201,8 +205,16 @@ func (session Session) CurrentRoundNumber() int {
 	return session.currentRoundNumber
 }
 
+func (session Session) FinalEstimate() (Estimate, bool) {
+	return session.finalEstimate, session.hasFinalEstimate
+}
+
 func (session Session) CreatedAt() time.Time {
 	return session.createdAt
+}
+
+func (session Session) CompletedAt() time.Time {
+	return session.completedAt
 }
 
 func (session Session) ExpiresAt() time.Time {
@@ -405,6 +417,29 @@ func (session *Session) RestartRound(roundID RoundID, openedAt time.Time) error 
 	session.currentRoundNumber++
 	session.currentRound = newRound(roundID, session.id, session.currentRoundNumber, openedAt)
 	session.state = SessionStateVoting
+
+	return nil
+}
+
+func (session *Session) Complete(finalEstimate Estimate, completedAt time.Time) error {
+	if session.state != SessionStateRevealed {
+		return fmt.Errorf("%w: session is not revealed", ErrCompleteNotAllowed)
+	}
+
+	if completedAt.IsZero() {
+		return fmt.Errorf("%w: completed at is required", ErrCompleteNotAllowed)
+	}
+
+	err := session.scale.Validate(finalEstimate)
+
+	if err != nil {
+		return err
+	}
+
+	session.finalEstimate = finalEstimate
+	session.hasFinalEstimate = true
+	session.completedAt = completedAt
+	session.state = SessionStateCompleted
 
 	return nil
 }
