@@ -4,11 +4,16 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 )
 
 var ErrInvalidSession = errors.New("invalid planning session")
+var ErrSessionNotOpen = errors.New("planning session is not open")
+var ErrParticipantNotFound = errors.New("participant not found")
+var ErrAlreadyParticipant = errors.New("user already participates")
+var ErrInvalidParticipant = errors.New("invalid participant")
 
 type SessionState string
 
@@ -35,6 +40,15 @@ type Task struct {
 	Title string
 }
 
+type Participant struct {
+	sessionID     SessionID
+	discordUserID DiscordUserID
+	displayName   string
+	active        bool
+	joinedAt      time.Time
+	leftAt        time.Time
+}
+
 type NewSessionInput struct {
 	ID            SessionID
 	GuildID       GuildID
@@ -59,6 +73,7 @@ type Session struct {
 	creatorID          DiscordUserID
 	facilitatorID      DiscordUserID
 	scale              Scale
+	participants       map[DiscordUserID]Participant
 	state              SessionState
 	currentRoundNumber int
 	createdAt          time.Time
@@ -85,6 +100,7 @@ func NewSession(input NewSessionInput) (Session, error) {
 		creatorID:          input.CreatorID,
 		facilitatorID:      input.FacilitatorID,
 		scale:              input.Scale,
+		participants:       make(map[DiscordUserID]Participant),
 		state:              SessionStateJoining,
 		currentRoundNumber: 0,
 		createdAt:          input.CreatedAt,
@@ -128,6 +144,32 @@ func (session Session) Scale() Scale {
 	return session.scale
 }
 
+func (session Session) Participants() []Participant {
+	participants := make([]Participant, 0, len(session.participants))
+
+	for _, participant := range session.participants {
+		participants = append(participants, participant)
+	}
+
+	slices.SortFunc(participants, compareParticipantsByJoinTime)
+
+	return participants
+}
+
+func (session Session) ActiveParticipants() []Participant {
+	participants := make([]Participant, 0, len(session.participants))
+
+	for _, participant := range session.participants {
+		if participant.active {
+			participants = append(participants, participant)
+		}
+	}
+
+	slices.SortFunc(participants, compareParticipantsByJoinTime)
+
+	return participants
+}
+
 func (session Session) State() SessionState {
 	return session.state
 }
@@ -142,6 +184,54 @@ func (session Session) CreatedAt() time.Time {
 
 func (session Session) ExpiresAt() time.Time {
 	return session.expiresAt
+}
+
+func (session *Session) JoinParticipant(discordUserID DiscordUserID, displayName string, joinedAt time.Time) error {
+	if session.state != SessionStateJoining {
+		return fmt.Errorf("%w: participants can only join while session is joining", ErrSessionNotOpen)
+	}
+
+	participant, err := newParticipant(session.id, discordUserID, displayName, joinedAt)
+
+	if err != nil {
+		return err
+	}
+
+	existing, exists := session.participants[participant.discordUserID]
+
+	if exists && existing.active {
+		return fmt.Errorf("%w: %s", ErrAlreadyParticipant, participant.discordUserID)
+	}
+
+	session.participants[participant.discordUserID] = participant
+
+	return nil
+}
+
+func (session *Session) LeaveParticipant(discordUserID DiscordUserID, leftAt time.Time) error {
+	if session.state != SessionStateJoining {
+		return fmt.Errorf("%w: participants can only leave while session is joining", ErrSessionNotOpen)
+	}
+
+	if discordUserID == "" {
+		return fmt.Errorf("%w: discord user id is required", ErrInvalidParticipant)
+	}
+
+	if leftAt.IsZero() {
+		return fmt.Errorf("%w: left at is required", ErrInvalidParticipant)
+	}
+
+	participant, exists := session.participants[discordUserID]
+
+	if !exists || !participant.active {
+		return fmt.Errorf("%w: %s", ErrParticipantNotFound, discordUserID)
+	}
+
+	participant.active = false
+	participant.leftAt = leftAt
+	session.participants[discordUserID] = participant
+
+	return nil
 }
 
 func validateNewSessionInput(input NewSessionInput) error {
@@ -204,4 +294,68 @@ func validateNewSessionInput(input NewSessionInput) error {
 	}
 
 	return nil
+}
+
+func newParticipant(sessionID SessionID, discordUserID DiscordUserID, displayName string, joinedAt time.Time) (Participant, error) {
+	displayName = strings.TrimSpace(displayName)
+
+	if sessionID == "" {
+		return Participant{}, fmt.Errorf("%w: session id is required", ErrInvalidParticipant)
+	}
+
+	if discordUserID == "" {
+		return Participant{}, fmt.Errorf("%w: discord user id is required", ErrInvalidParticipant)
+	}
+
+	if displayName == "" {
+		return Participant{}, fmt.Errorf("%w: display name is required", ErrInvalidParticipant)
+	}
+
+	if joinedAt.IsZero() {
+		return Participant{}, fmt.Errorf("%w: joined at is required", ErrInvalidParticipant)
+	}
+
+	return Participant{
+		sessionID:     sessionID,
+		discordUserID: discordUserID,
+		displayName:   displayName,
+		active:        true,
+		joinedAt:      joinedAt,
+	}, nil
+}
+
+func (participant Participant) SessionID() SessionID {
+	return participant.sessionID
+}
+
+func (participant Participant) DiscordUserID() DiscordUserID {
+	return participant.discordUserID
+}
+
+func (participant Participant) DisplayName() string {
+	return participant.displayName
+}
+
+func (participant Participant) Active() bool {
+	return participant.active
+}
+
+func (participant Participant) JoinedAt() time.Time {
+	return participant.joinedAt
+}
+
+func (participant Participant) LeftAt() time.Time {
+	return participant.leftAt
+}
+
+func compareParticipantsByJoinTime(left Participant, right Participant) int {
+	if left.joinedAt.Before(right.joinedAt) {
+		return -1
+	}
+
+	if left.joinedAt.After(right.joinedAt) {
+		return 1
+	}
+
+	return strings.Compare(string(left.discordUserID), string(right.discordUserID))
 }

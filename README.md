@@ -105,6 +105,8 @@ As estatísticas numéricas calculam mínimo, máximo, mediana e moda usando som
 
 Sessões de Planning Poker nascem no estado `JOINING`, vinculadas a guild, canal, thread, mensagem principal, tarefa, criador, facilitador, escala e expiração. Participantes e rodadas são adicionados nas próximas etapas da máquina de estados.
 
+Enquanto a sessão está em `JOINING`, participantes podem entrar e sair. O domínio impede duplicidade de participantes ativos e bloqueia mudanças na lista depois que a sessão sai desse estado.
+
 ## Encerramento
 
 O processo trata `SIGINT` e `SIGTERM`, cancela o contexto raiz e executa o fechamento de recursos respeitando `SHUTDOWN_TIMEOUT`.
