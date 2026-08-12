@@ -117,6 +117,8 @@ Depois de uma revelação, a sessão pode iniciar uma nova rodada: a rodada ante
 
 Uma sessão revelada pode ser finalizada com uma estimativa válida da escala. Ao concluir, a sessão registra estimativa final, instante de conclusão e passa a bloquear novas mutações.
 
+Sessões ainda não terminais podem ser canceladas por um ator com motivo ou expiradas com motivo e instante. `CANCELLED` e `EXPIRED` também são estados terminais e bloqueiam novas mutações.
+
 ## Encerramento
 
 O processo trata `SIGINT` e `SIGTERM`, cancela o contexto raiz e executa o fechamento de recursos respeitando `SHUTDOWN_TIMEOUT`.
